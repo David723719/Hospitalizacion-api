@@ -2,9 +2,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using HospitalizacionAPI.Data;
 using HospitalizacionAPI.Models;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace HospitalizacionAPI.Controllers;
 
@@ -13,101 +10,161 @@ namespace HospitalizacionAPI.Controllers;
 public class CamasController : ControllerBase
 {
     private readonly HospitalizacionDbContext _db;
-    public CamasController(HospitalizacionDbContext db) => _db = db;
+    private readonly ILogger<CamasController> _logger;
 
-    // ✅ GET /api/camas (Ruta explícita para evitar 405)
+    public CamasController(HospitalizacionDbContext db, ILogger<CamasController> logger) 
+    { 
+        _db = db; 
+        _logger = logger;
+    }
+
+    // ✅ GET /api/camas
     [HttpGet("")]
-    public async Task<IActionResult> Listar() => 
-        Ok(await _db.Camas.Select(c => new { 
-            c.Codigo, c.CodigoLogistica, c.Unidad, c.Tipo, c.EstadoOperativo, c.Estado, c.FechaRegistro 
-        }).ToListAsync());
+    public async Task<IActionResult> Listar()
+    {
+        try
+        {
+            _logger.LogInformation("Listando camas...");
+            var camas = await _db.Camas.Select(c => new { 
+                c.Codigo, c.CodigoLogistica, c.Unidad, c.Tipo, c.EstadoOperativo, c.Estado 
+            }).ToListAsync();
+            _logger.LogInformation($"✅ {camas.Count} camas encontradas");
+            return Ok(camas);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"❌ Error al listar camas: {ex.Message}");
+            return StatusCode(500, new { mensaje = "Error interno del servidor", error = ex.Message });
+        }
+    }
 
-    // ✅ GET /api/camas/disponibles
-    [HttpGet("disponibles")]
-    public async Task<IActionResult> ListarDisponibles() => 
-        Ok(await _db.Camas
-            .Where(c => c.EstadoOperativo == "Disponible" && c.Estado == "Activo")
-            .Select(c => new { c.Codigo, c.Unidad, c.Tipo })
-            .ToListAsync());
-
-    // ✅ POST /api/camas
+    // ✅ POST /api/camas - CREAR CAMA
     [HttpPost("")]
     public async Task<IActionResult> Crear([FromBody] CamaDto dto)
     {
-        if (dto == null) return BadRequest(new { mensaje = "Datos inválidos" });
-        if (await _db.Camas.AnyAsync(c => c.Codigo == dto.Codigo))
-            return BadRequest(new { mensaje = "El código ya existe" });
-
-        var cama = new Cama
+        try
         {
-            Codigo = dto.Codigo ?? "CAM-" + Guid.NewGuid().ToString().Substring(0, 6).ToUpper(),
-            CodigoLogistica = dto.CodigoLogistica,
-            Unidad = dto.Unidad ?? "General",
-            Tipo = dto.Tipo ?? "Estándar",
-            EstadoOperativo = "Disponible",
-            Estado = "Activo",
-            FechaRegistro = DateTime.UtcNow
-        };
-        _db.Camas.Add(cama);
-        await _db.SaveChangesAsync();
-        return CreatedAtAction(nameof(Listar), new { codigo = cama.Codigo }, new { mensaje = "Cama creada", cama });
-    }
+            _logger.LogInformation($"Intentando crear cama: {dto?.Codigo}");
+            
+            if (dto == null || string.IsNullOrWhiteSpace(dto.Codigo))
+                return BadRequest(new { mensaje = "Datos inválidos: código requerido" });
 
-    // 🔥 POST /api/camas/registrar-desde-logistica
-    [HttpPost("registrar-desde-logistica")]
-    public async Task<IActionResult> RegistrarDesdeLogistica([FromBody] List<CamaLogisticaDto> camasRecibidas)
-    {
-        if (camasRecibidas == null || !camasRecibidas.Any())
-            return BadRequest(new { mensaje = "No se recibieron camas" });
+            if (await _db.Camas.AnyAsync(c => c.Codigo == dto.Codigo))
+                return BadRequest(new { mensaje = "El código ya existe" });
 
-        var creadas = new List<Cama>();
-        var yaExisten = 0;
+            var cama = new Cama
+            {
+                Codigo = dto.Codigo,
+                CodigoLogistica = dto.CodigoLogistica,
+                Unidad = dto.Unidad ?? "General",
+                Tipo = dto.Tipo ?? "Estándar",
+                EstadoOperativo = "Disponible",
+                Estado = "Activo",
+                FechaRegistro = DateTime.UtcNow
+            };
 
-        foreach (var c in camasRecibidas)
-        {
-            if (await _db.Camas.AnyAsync(x => x.CodigoLogistica == c.CodigoLogistica)) { yaExisten++; continue; }
-            string codigoUnico = "CAM-HOSP-" + Guid.NewGuid().ToString().Substring(0, 6).ToUpper();
-            creadas.Add(new Cama {
-                Codigo = codigoUnico, CodigoLogistica = c.CodigoLogistica,
-                Unidad = c.Unidad ?? "General", Tipo = c.Tipo ?? "Estándar",
-                EstadoOperativo = "Disponible", Estado = "Activo", FechaRegistro = DateTime.UtcNow
+            _db.Camas.Add(cama);
+            await _db.SaveChangesAsync();
+            _logger.LogInformation($"✅ Cama creada: {cama.Codigo}");
+            
+            return CreatedAtAction(nameof(Listar), new { codigo = cama.Codigo }, new { 
+                mensaje = "Cama creada exitosamente", 
+                cama = new { cama.Codigo, cama.Unidad, cama.Tipo } 
             });
         }
-        if (!creadas.Any()) return Ok(new { mensaje = $"Todas existían ({yaExisten})", creadas = 0 });
-        _db.Camas.AddRange(creadas);
-        await _db.SaveChangesAsync();
-        return StatusCode(201, new { mensaje = $"{creadas.Count} creadas", nuevas = creadas.Count, camas = creadas });
+        catch (DbUpdateException ex)
+        {
+            _logger.LogError($"❌ Error de base de datos: {ex.Message}");
+            return StatusCode(500, new { mensaje = "Error al guardar en base de datos", error = ex.InnerException?.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"❌ Error inesperado: {ex.Message}");
+            return StatusCode(500, new { mensaje = "Error interno", error = ex.Message });
+        }
+    }
+
+    // ✅ GET /api/camas/disponibles
+    [HttpGet("disponibles")]
+    public async Task<IActionResult> Disponibles()
+    {
+        try
+        {
+            var camas = await _db.Camas
+                .Where(c => c.EstadoOperativo == "Disponible" && c.Estado == "Activo")
+                .Select(c => new { c.Codigo, c.Unidad, c.Tipo })
+                .ToListAsync();
+            return Ok(camas);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"❌ Error: {ex.Message}");
+            return StatusCode(500, new { mensaje = "Error interno" });
+        }
     }
 
     // ✅ PUT /api/camas/{codigo}/estado
     [HttpPut("{codigo}/estado")]
     public async Task<IActionResult> CambiarEstado(string codigo, [FromBody] CambiarEstadoDto request)
     {
-        if (string.IsNullOrWhiteSpace(request?.EstadoOperativo))
-            return BadRequest(new { mensaje = "Debe enviar 'estadoOperativo'" });
-        var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == codigo);
-        if (cama == null) return NotFound(new { mensaje = "Cama no encontrada" });
-        if (request.EstadoOperativo == "Disponible")
+        try
         {
-            var hayPaciente = await _db.Admisiones.AnyAsync(a => a.CamaCodigo == codigo && a.Estado == "Activo");
-            if (hayPaciente) return BadRequest(new { mensaje = "Hay admisión activa en esta cama" });
+            if (string.IsNullOrWhiteSpace(request?.EstadoOperativo))
+                return BadRequest(new { mensaje = "estadoOperativo requerido" });
+
+            var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == codigo);
+            if (cama == null) return NotFound(new { mensaje = "Cama no encontrada" });
+
+            cama.EstadoOperativo = request.EstadoOperativo;
+            await _db.SaveChangesAsync();
+            return Ok(new { mensaje = "Estado actualizado" });
         }
-        cama.EstadoOperativo = request.EstadoOperativo;
-        await _db.SaveChangesAsync();
-        return Ok(new { mensaje = $"Estado: {request.EstadoOperativo}" });
+        catch (Exception ex)
+        {
+            _logger.LogError($"❌ Error: {ex.Message}");
+            return StatusCode(500, new { mensaje = "Error interno" });
+        }
     }
 
-    // ✅ DELETE /api/camas/{codigo}
-    [HttpDelete("{codigo}")]
-    public async Task<IActionResult> Eliminar(string codigo)
+    // 🔥 POST /api/camas/registrar-desde-logistica
+    [HttpPost("registrar-desde-logistica")]
+    public async Task<IActionResult> RegistrarDesdeLogistica([FromBody] List<CamaLogisticaDto> camasRecibidas)
     {
-        var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == codigo);
-        if (cama == null) return NotFound(new { mensaje = "Cama no encontrada" });
-        var tieneAdmision = await _db.Admisiones.AnyAsync(a => a.CamaCodigo == codigo && a.Estado == "Activo");
-        if (tieneAdmision) return BadRequest(new { mensaje = "No se puede eliminar: tiene admisión activa" });
-        cama.Estado = "Inactivo";
-        await _db.SaveChangesAsync();
-        return Ok(new { mensaje = "Cama dada de baja" });
+        try
+        {
+            if (camasRecibidas == null || !camasRecibidas.Any())
+                return BadRequest(new { mensaje = "No se recibieron camas" });
+
+            var creadas = new List<Cama>();
+            foreach (var c in camasRecibidas)
+            {
+                if (await _db.Camas.AnyAsync(x => x.CodigoLogistica == c.CodigoLogistica)) continue;
+                
+                creadas.Add(new Cama
+                {
+                    Codigo = "CAM-" + Guid.NewGuid().ToString().Substring(0, 6).ToUpper(),
+                    CodigoLogistica = c.CodigoLogistica,
+                    Unidad = c.Unidad ?? "General",
+                    Tipo = c.Tipo ?? "Estándar",
+                    EstadoOperativo = "Disponible",
+                    Estado = "Activo",
+                    FechaRegistro = DateTime.UtcNow
+                });
+            }
+
+            if (creadas.Any())
+            {
+                _db.Camas.AddRange(creadas);
+                await _db.SaveChangesAsync();
+                return StatusCode(201, new { mensaje = $"{creadas.Count} creadas", nuevas = creadas.Count });
+            }
+            return Ok(new { mensaje = "Todas existían", creadas = 0 });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"❌ Error: {ex.Message}");
+            return StatusCode(500, new { mensaje = "Error interno" });
+        }
     }
 }
 

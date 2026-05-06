@@ -3,43 +3,41 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using HospitalizacionAPI.Data;
 using HospitalizacionAPI.Models;
-using HospitalizacionAPI.Services;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 🌐 Puerto dinámico para Railway
+// 🌐 Puerto dinámico
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// 🔒 CORS: Permite frontend local + Vercel + Railway
+// 🔒 CORS: PERMITE TODO (para desarrollo - ajustar en producción)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins(
-            "http://localhost:5173",      // Frontend Vite local
-            "http://localhost:5200",      // Backend local
-            "https://hospital-frontend-david723719.vercel.app", // Frontend en Vercel
-            "https://hospitalizacion-api-production.up.railway.app" // Backend en Railway
-        )
-        .AllowAnyHeader()
-        .AllowAnyMethod()
-        .AllowCredentials();
+        policy.SetIsOriginAllowed(_ => true) // ← Permite cualquier origen (desarrollo)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
     });
 });
 
-// 📦 Servicios
-builder.Services.AddHttpClient();
-builder.Services.Configure<ExternalServicesConfig>(builder.Configuration.GetSection("ExternalServices"));
-builder.Services.AddScoped<ExternalApiService>();
+// 🗄️ Base de datos CON MANEJO DE ERRORES
+try
+{
+    var connectionString = ResolveConnectionString(builder.Configuration);
+    builder.Services.AddDbContext<HospitalizacionDbContext>(options =>
+        options.UseNpgsql(connectionString));
+    Console.WriteLine($"✅ DB configurada");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"❌ ERROR DB: {ex.Message}");
+    // No lanzar excepción para que el backend arranque igual
+}
 
-// 🗄️ Base de datos
-var connectionString = ResolveConnectionString(builder.Configuration);
-builder.Services.AddDbContext<HospitalizacionDbContext>(options =>
-    options.UseNpgsql(connectionString));
-
-// 📦 Controllers + Swagger
+// 📦 Controllers
 builder.Services.AddControllers().AddJsonOptions(opt =>
 {
     opt.JsonSerializerOptions.PropertyNamingPolicy = null;
@@ -47,55 +45,33 @@ builder.Services.AddControllers().AddJsonOptions(opt =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo 
-    { 
-        Title = "Hospitalización API", 
-        Version = "v1",
-        Description = "API para gestión de admisiones, camas y reportes"
-    });
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Hospital API", Version = "v1" });
 });
 
 var app = builder.Build();
 
-// 🔄 Inicializar DB
-using (var scope = app.Services.CreateScope())
+// 🔄 Middleware con logging
+app.Use(async (context, next) =>
 {
-    var services = scope.ServiceProvider;
-    var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-    try
-    {
-        var db = services.GetRequiredService<HospitalizacionDbContext>();
-        logger.LogInformation("✅ DB context initialized");
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "⚠️ DB init warning");
-    }
-}
+    Console.WriteLine($"📥 {context.Request.Method} {context.Request.Path}");
+    await next();
+    Console.WriteLine($"📤 {context.Response.StatusCode}");
+});
 
-// 🧭 Middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(c => { c.SwaggerEndpoint("/swagger/v1/swagger.json", "API v1"); c.RoutePrefix = "swagger"; });
-    app.MapGet("/", () => Results.Redirect("/swagger"));
-}
-else
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c => { c.SwaggerEndpoint("/swagger/v1/swagger.json", "API"); c.RoutePrefix = "swagger"; });
 }
 
-app.UseCors("AllowAll"); // ← DEBE coincidir con el nombre de la política
+app.UseCors("AllowAll"); // ← Nombre debe coincidir
 app.UseAuthorization();
 app.MapControllers();
 
-Console.WriteLine($"✅ Backend: http://0.0.0.0:{port}");
-Console.WriteLine($"✅ Environment: {app.Environment.EnvironmentName}");
-
+Console.WriteLine($"🚀 Backend listo en puerto {port}");
 app.Run();
 
-// 🔧 Resolver conexión: Railway o Local
+// 🔧 Resolver conexión
 static string ResolveConnectionString(IConfiguration config)
 {
     var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
@@ -103,17 +79,15 @@ static string ResolveConnectionString(IConfiguration config)
     {
         var uri = new Uri(dbUrl);
         var userInfo = uri.UserInfo.Split(':', 2);
-        var username = Uri.UnescapeDataString(userInfo.Length > 0 ? userInfo[0] : "");
-        var password = Uri.UnescapeDataString(userInfo.Length > 1 ? userInfo[1] : "");
-        var database = uri.AbsolutePath.TrimStart('/');
-        var npgsql = new NpgsqlConnectionStringBuilder
+        return new NpgsqlConnectionStringBuilder
         {
-            Host = uri.Host, Port = uri.Port, Username = username, Password = password,
-            Database = database, SslMode = SslMode.Require, Timeout = 30, CommandTimeout = 60
-        };
-        return npgsql.ConnectionString;
+            Host = uri.Host, Port = uri.Port,
+            Username = Uri.UnescapeDataString(userInfo.Length > 0 ? userInfo[0] : ""),
+            Password = Uri.UnescapeDataString(userInfo.Length > 1 ? userInfo[1] : ""),
+            Database = uri.AbsolutePath.TrimStart('/'),
+            SslMode = SslMode.Require
+        }.ConnectionString;
     }
-    var local = config.GetConnectionString("DefaultConnection");
-    if (!string.IsNullOrWhiteSpace(local)) return local;
-    throw new InvalidOperationException("❌ No connection string found.");
+    return config.GetConnectionString("DefaultConnection") 
+        ?? throw new InvalidOperationException("No connection string");
 }
