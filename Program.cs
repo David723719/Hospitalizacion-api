@@ -10,14 +10,20 @@ var builder = WebApplication.CreateBuilder(args);
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// 🔥 CORS - PERMITE ABSOLUTAMENTE TODO (desarrollo)
+// CORS para desarrollo local y frontends en Vercel.
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", p => p
-        .SetIsOriginAllowed(_ => true)  // ← Cualquier origen
-        .AllowAnyHeader()                // ← Cualquier header
-        .AllowAnyMethod()                // ← POST, PUT, DELETE, OPTIONS
-        .AllowCredentials());
+    options.AddPolicy("FrontendPolicy", p => p
+        .SetIsOriginAllowed(origin =>
+        {
+            if (string.IsNullOrWhiteSpace(origin)) return false;
+            if (origin.StartsWith("http://localhost:")) return true;
+            if (origin.StartsWith("https://localhost:")) return true;
+            if (origin.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        })
+        .AllowAnyHeader()
+        .AllowAnyMethod());
 });
 
 // Base de datos - Parseo DIRECTO de tu DATABASE_URL
@@ -48,10 +54,11 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
-// 🔥 ORDEN CRÍTICO: CORS ANTES de todo
-app.UseCors("AllowAll");  // ← Nombre debe coincidir con AddCors
+app.UseRouting();
+app.UseCors("FrontendPolicy");
 app.UseAuthorization();
 app.MapControllers();
+app.MapMethods("/api/{**path}", new[] { "OPTIONS" }, () => Results.Ok());
 
 // 🔥 ENDPOINT DE PRUEBA: Siempre responde para verificar CORS/POST
 app.MapPost("/api/test", () => Results.Ok(new { mensaje = "POST funciona!", timestamp = DateTime.UtcNow }));
