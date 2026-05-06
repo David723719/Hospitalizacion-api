@@ -5,16 +5,18 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// 🔥 PUERTO PARA RAILWAY
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+Console.WriteLine($"🔧 Listening on port {port}");
 
-// CORS PERMISIVO - Permite TODO
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
         policy
-            .WithOrigins("*")  // ← Permite CUALQUIER origen
+            .WithOrigins("*")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -22,20 +24,22 @@ builder.Services.AddCors(options =>
 });
 
 // DB
-var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL") 
-    ?? "postgresql://postgres:mBnVjAqqXptogpKsefIaIFEWaObrAuPq@trolley.proxy.rlwy.net:54033/railway";
-
-var uri = new Uri(dbUrl);
-var up = uri.UserInfo.Split(':');
-var cs = new NpgsqlConnectionStringBuilder
+var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+if (!string.IsNullOrEmpty(dbUrl))
 {
-    Host = uri.Host, Port = uri.Port,
-    Username = up[0], Password = up[1],
-    Database = uri.AbsolutePath.Trim('/'),
-    SslMode = SslMode.Require
-};
+    var uri = new Uri(dbUrl);
+    var up = uri.UserInfo.Split(':');
+    var cs = new NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host, Port = uri.Port,
+        Username = up[0], Password = up[1],
+        Database = uri.AbsolutePath.Trim('/'),
+        SslMode = SslMode.Require
+    };
+    builder.Services.AddDbContext<HospitalizacionDbContext>(o => o.UseNpgsql(cs.ConnectionString));
+    Console.WriteLine($"✅ DB Connected: {cs.Host}:{cs.Port}/{cs.Database}");
+}
 
-builder.Services.AddDbContext<HospitalizacionDbContext>(o => o.UseNpgsql(cs.ConnectionString));
 builder.Services.AddControllers();
 
 var app = builder.Build();
@@ -45,7 +49,11 @@ app.UseCors("AllowAll");
 app.UseAuthorization();
 app.MapControllers();
 
-app.MapGet("/health", () => Results.Ok(new { ok = true }));
+// ✅ ENDPOINT DE SALUD - DEBE IR DESPUÉS DE MapControllers
+app.MapGet("/health", () => Results.Ok(new { ok = true, port = port }));
+app.MapGet("/", () => Results.Ok(new { message = "Hospital API is running" }));
 
-Console.WriteLine($"🚀 Backend ready");
+Console.WriteLine($"🚀 Backend ready on port {port}");
+Console.WriteLine($"🌐 Health check: http://localhost:{port}/health");
+
 app.Run();
