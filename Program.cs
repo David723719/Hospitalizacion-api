@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using HospitalizacionAPI.Data;
 using HospitalizacionAPI.Models;
 using HospitalizacionAPI.Services;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,8 +49,10 @@ builder.Services.Configure<ExternalServicesConfig>(builder.Configuration.GetSect
 builder.Services.AddScoped<ExternalApiService>();
 
 // 🗄️ Base de datos (usa variable de entorno en Railway)
+var connectionString = ResolveConnectionString(builder.Configuration);
+
 builder.Services.AddDbContext<HospitalizacionDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(connectionString));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -84,3 +87,33 @@ Console.WriteLine($"✅ Backend listo en puerto {port}");
 Console.WriteLine($"✅ Environment: {app.Environment.EnvironmentName}");
 
 app.Run();
+
+static string ResolveConnectionString(IConfiguration configuration)
+{
+    var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+
+    if (!string.IsNullOrWhiteSpace(databaseUrl))
+    {
+        // Railway entrega conexión tipo URL: postgresql://user:pass@host:port/db
+        var uri = new Uri(databaseUrl);
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var username = userInfo.Length > 0 ? userInfo[0] : string.Empty;
+        var password = userInfo.Length > 1 ? userInfo[1] : string.Empty;
+        var database = uri.AbsolutePath.TrimStart('/');
+
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = uri.Port,
+            Username = Uri.UnescapeDataString(username),
+            Password = Uri.UnescapeDataString(password),
+            Database = database,
+            SslMode = SslMode.Require
+        };
+
+        return builder.ConnectionString;
+    }
+
+    return configuration.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException("No se encontró la cadena de conexión.");
+}

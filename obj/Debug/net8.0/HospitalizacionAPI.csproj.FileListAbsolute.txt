@@ -109,3 +109,4 @@ C:\Users\USUARIO\Documents\proyectos universidad\HospitalizacionAPI\obj\Debug\ne
 C:\Users\USUARIO\Documents\proyectos universidad\HospitalizacionAPI\obj\Debug\net8.0\HospitalizacionAPI.pdb
 C:\Users\USUARIO\Documents\proyectos universidad\HospitalizacionAPI\obj\Debug\net8.0\HospitalizacionAPI.genruntimeconfig.cache
 C:\Users\USUARIO\Documents\proyectos universidad\HospitalizacionAPI\obj\Debug\net8.0\ref\HospitalizacionAPI.dll
+C:\Users\USUARIO\Documents\proyectos universidad\HospitalizacionAPI\obj\Debug\net8.0\HospitalizacionAPI.sourcelink.json
