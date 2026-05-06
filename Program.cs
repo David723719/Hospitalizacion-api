@@ -1,19 +1,31 @@
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using HospitalizacionAPI.Data;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Puerto
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// CORS - Permite TODO
-builder.Services.AddCors(p => p.AddPolicy("CorsPolicy", b => 
-    b.SetIsOriginAllowed(_ => true).AllowAnyMethod().AllowAnyHeader().AllowCredentials()));
+// 🔥 CORS - PERMISIVO Y FUNCIONAL
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy
+            .WithOrigins(
+                "https://hospital-frontend-beryl.vercel.app",
+                "http://localhost:5173"
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod()  // GET, POST, PUT, DELETE, OPTIONS
+            .AllowCredentials();
+    });
+});
 
-// Base de datos - Tu conexión exacta
+// Base de datos
 var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL") 
     ?? "postgresql://postgres:mBnVjAqqXptogpKsefIaIFEWaObrAuPq@trolley.proxy.rlwy.net:54033/railway";
 
@@ -31,9 +43,13 @@ builder.Services.AddDbContext<HospitalizacionDbContext>(o => o.UseNpgsql(cs.Conn
 builder.Services.AddControllers();
 
 var app = builder.Build();
-app.UseCors("CorsPolicy");
+
+// 🔥 ORDEN CRÍTICO: CORS ANTES de Authorization y MapControllers
+app.UseCors("AllowAll");        // ← Nombre debe coincidir con AddCors
 app.UseAuthorization();
 app.MapControllers();
+
+// Health check
 app.MapGet("/health", () => Results.Ok(new { ok = true }));
 
 Console.WriteLine($"🚀 Backend ready on port {port}");
