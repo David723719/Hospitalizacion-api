@@ -10,18 +10,11 @@ var builder = WebApplication.CreateBuilder(args);
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// CORS para desarrollo local y frontends en Vercel.
+// CORS abierto para evitar bloqueos desde Vercel y localhost.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendPolicy", p => p
-        .SetIsOriginAllowed(origin =>
-        {
-            if (string.IsNullOrWhiteSpace(origin)) return false;
-            if (origin.StartsWith("http://localhost:")) return true;
-            if (origin.StartsWith("https://localhost:")) return true;
-            if (origin.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
-        })
+        .SetIsOriginAllowed(_ => true)
         .AllowAnyHeader()
         .AllowAnyMethod());
 });
@@ -56,9 +49,20 @@ var app = builder.Build();
 
 app.UseRouting();
 app.UseCors("FrontendPolicy");
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+    context.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
+    context.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+    if (HttpMethods.IsOptions(context.Request.Method))
+    {
+        context.Response.StatusCode = StatusCodes.Status204NoContent;
+        return;
+    }
+    await next();
+});
 app.UseAuthorization();
 app.MapControllers();
-app.MapMethods("/api/{**path}", new[] { "OPTIONS" }, () => Results.Ok());
 
 // 🔥 ENDPOINT DE PRUEBA: Siempre responde para verificar CORS/POST
 app.MapPost("/api/test", () => Results.Ok(new { mensaje = "POST funciona!", timestamp = DateTime.UtcNow }));
