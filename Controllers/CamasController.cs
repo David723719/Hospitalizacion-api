@@ -6,101 +6,68 @@ using System.Threading.Tasks;
 
 namespace HospitalizacionAPI.Controllers;
 
-[Route("api/camas")]
-[ApiController]
+[Route("api/camas"), ApiController]
 public class CamasController : ControllerBase
 {
     private readonly HospitalizacionDbContext _db;
     public CamasController(HospitalizacionDbContext db) => _db = db;
 
-    // ✅ GET /api/camas - USANDO SQL DIRECTO PARA EVITAR ERRORES DE MODELO
     [HttpGet]
     public async Task<IActionResult> Get()
     {
         try 
         {
-            // Ejecutamos SQL puro. Esto ignora cualquier configuración de EF Core.
-            var camas = await _db.Database.SqlQueryRaw<CamaSimple>(
-                @"SELECT ""Codigo"", ""Unidad"", ""Tipo"", ""Estado"" FROM ""Camas"""
-            ).ToListAsync();
-            
+            var camas = await _db.Database.SqlQueryRaw<CamaResult>(
+                @"SELECT ""Codigo"", ""Unidad"", ""Tipo"", ""Estado"" FROM ""Camas""").ToListAsync();
             return Ok(camas);
         }
-        catch (System.Exception ex)
-        {
-            // Logueamos pero devolvemos array vacío para que el frontend no se rompa
-            System.Console.WriteLine($"❌ ERROR CAMAS: {ex.Message}");
-            return Ok(new List<object>());
-        }
+        catch (System.Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
-    // ✅ GET /api/camas/disponibles - SQL DIRECTO
     [HttpGet("disponibles")]
-    public async Task<IActionResult> GetDisponibles()
+    public async Task<IActionResult> Disponibles()
     {
         try 
         {
-            var camas = await _db.Database.SqlQueryRaw<CamaSimple>(
-                @"SELECT ""Codigo"", ""Unidad"", ""Tipo"" FROM ""Camas"" WHERE ""Estado"" = 'Activo'"
-            ).ToListAsync();
-            
+            var camas = await _db.Database.SqlQueryRaw<CamaResult>(
+                @"SELECT ""Codigo"", ""Unidad"", ""Tipo"" FROM ""Camas"" WHERE ""Estado"" = 'Activo'").ToListAsync();
             return Ok(camas);
         }
-        catch (System.Exception ex)
-        {
-            System.Console.WriteLine($"❌ ERROR DISPONIBLES: {ex.Message}");
-            return Ok(new List<object>());
-        }
+        catch (System.Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
-    // ✅ POST /api/camas - INSERT DIRECTO
     [HttpPost]
-    public async Task<IActionResult> Post([FromBody] CreateCamaRequest request)
+    public async Task<IActionResult> Post([FromBody] CreateCamaDto dto)
     {
         try 
         {
-            if (string.IsNullOrWhiteSpace(request.Codigo))
-                return BadRequest(new { mensaje = "El código es obligatorio" });
-
-            // Verificar existencia con SQL
+            if (string.IsNullOrWhiteSpace(dto?.Codigo)) return BadRequest(new { mensaje = "Código requerido" });
             var existe = await _db.Database.SqlQueryRaw<string>(
-                @"SELECT ""Codigo"" FROM ""Camas"" WHERE ""Codigo"" = @p0", request.Codigo
-            ).FirstOrDefaultAsync();
-
-            if (existe != null) return BadRequest(new { mensaje = "El código ya existe" });
-
-            // Insertar directo
+                @"SELECT ""Codigo"" FROM ""Camas"" WHERE ""Codigo"" = @p0", dto.Codigo).FirstOrDefaultAsync();
+            if (existe != null) return BadRequest(new { mensaje = "Ya existe" });
+            
             await _db.Database.ExecuteSqlRawAsync(
-                @"INSERT INTO ""Camas"" (""Codigo"", ""Unidad"", ""Tipo"", ""Estado"") 
-                  VALUES (@p0, @p1, @p2, @p3)",
-                request.Codigo, 
-                request.Unidad ?? "General", 
-                request.Tipo ?? "Estándar", 
-                "Activo"
-            );
+                @"INSERT INTO ""Camas"" (""Codigo"", ""Unidad"", ""Tipo"", ""Estado"") VALUES (@p0, @p1, @p2, @p3)",
+                dto.Codigo, dto.Unidad ?? "General", dto.Tipo ?? "Estándar", "Activo");
+            
+            return Created("", new { mensaje = "Creada", codigo = dto.Codigo });
+        }
+        catch (System.Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
 
-            return Created("", new { mensaje = "Cama creada", codigo = request.Codigo });
-        }
-        catch (System.Exception ex)
+    [HttpPut("{codigo}/estado")]
+    public async Task<IActionResult> Put(string codigo, [FromBody] UpdateEstadoDto dto)
+    {
+        try
         {
-            return StatusCode(500, new { error = "Error al guardar", detalle = ex.Message });
+            await _db.Database.ExecuteSqlRawAsync(
+                @"UPDATE ""Camas"" SET ""Estado"" = @p0 WHERE ""Codigo"" = @p1", dto.Estado, codigo);
+            return Ok(new { mensaje = "Actualizado" });
         }
+        catch (System.Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 }
 
-// DTO simple para recibir datos del POST
-public class CreateCamaRequest 
-{ 
-    public string Codigo { get; set; } 
-    public string? Unidad { get; set; } 
-    public string? Tipo { get; set; } 
-}
-
-// DTO simple para el resultado del SQL (NO usa el modelo de EF)
-public class CamaSimple 
-{
-    public string Codigo { get; set; }
-    public string Unidad { get; set; }
-    public string Tipo { get; set; }
-    public string Estado { get; set; }
-}
+public class CreateCamaDto { public string Codigo { get; set; } = ""; public string? Unidad { get; set; } public string? Tipo { get; set; } }
+public class UpdateEstadoDto { public string Estado { get; set; } = "Activo"; }
+public class CamaResult { public string Codigo { get; set; } = ""; public string Unidad { get; set; } = ""; public string Tipo { get; set; } = ""; public string Estado { get; set; } = ""; }
