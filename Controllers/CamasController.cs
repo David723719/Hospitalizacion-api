@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using HospitalizacionAPI.Data;
+using HospitalizacionAPI.Models;  // ← ESTE USING FALTABA - CRÍTICO
 
 namespace HospitalizacionAPI.Controllers;
 

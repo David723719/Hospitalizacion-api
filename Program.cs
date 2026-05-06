@@ -1,46 +1,42 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.OpenApi.Models;
 using HospitalizacionAPI.Data;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Puerto para Railway
+// Puerto
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// 🔥 CORS - PERMITE TODO
+// 🔥 CORS - PERMITE ABSOLUTAMENTE TODO (desarrollo)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", p => p
-        .SetIsOriginAllowed(_ => true)
-        .AllowAnyHeader()
-        .AllowAnyMethod()
+        .SetIsOriginAllowed(_ => true)  // ← Cualquier origen
+        .AllowAnyHeader()                // ← Cualquier header
+        .AllowAnyMethod()                // ← POST, PUT, DELETE, OPTIONS
         .AllowCredentials());
 });
 
-// 🗄️ Base de datos - Parseo DIRECTO de tu DATABASE_URL
+// Base de datos - Parseo DIRECTO de tu DATABASE_URL
 var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 if (!string.IsNullOrEmpty(dbUrl))
 {
-    // Tu URL: postgresql://postgres:PASS@trolley.proxy.rlwy.net:54033/railway
     var uri = new Uri(dbUrl);
-    var userPass = uri.UserInfo.Split(':');
-    
+    var up = uri.UserInfo.Split(':');
     var cs = new NpgsqlConnectionStringBuilder
     {
-        Host = uri.Host,                        // trolley.proxy.rlwy.net
-        Port = uri.Port,                        // 54033
-        Username = userPass[0],                 // postgres
-        Password = userPass[1],                 // mBnVjAqqXptogpKsefIaIFEWaObrAuPq
-        Database = uri.AbsolutePath.Trim('/'),  // railway
-        SslMode = SslMode.Require               // Railway requiere SSL
+        Host = uri.Host,
+        Port = uri.Port,
+        Username = up[0],
+        Password = up[1],
+        Database = uri.AbsolutePath.Trim('/'),
+        SslMode = SslMode.Require
     };
-    
     builder.Services.AddDbContext<HospitalizacionDbContext>(o => o.UseNpgsql(cs.ConnectionString));
-    Console.WriteLine($"✅ DB OK: {cs.Host}:{cs.Port}/{cs.Database}");
+    Console.WriteLine($"✅ DB: {cs.Host}:{cs.Port}/{cs.Database}");
 }
 else
 {
@@ -49,21 +45,32 @@ else
 }
 
 builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new OpenApiInfo { Title = "Hospital API", Version = "v1" }));
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(c => { c.SwaggerEndpoint("/swagger/v1/swagger.json", "API"); c.RoutePrefix = "swagger"; });
-}
-
-// 🔥 ORDEN CRÍTICO: CORS antes de MapControllers
-app.UseCors("AllowAll");
+// 🔥 ORDEN CRÍTICO: CORS ANTES de todo
+app.UseCors("AllowAll");  // ← Nombre debe coincidir con AddCors
 app.UseAuthorization();
 app.MapControllers();
 
+// 🔥 ENDPOINT DE PRUEBA: Siempre responde para verificar CORS/POST
+app.MapPost("/api/test", () => Results.Ok(new { mensaje = "POST funciona!", timestamp = DateTime.UtcNow }));
+app.MapGet("/api/test", () => Results.Ok(new { mensaje = "GET funciona!", timestamp = DateTime.UtcNow }));
+
 Console.WriteLine($"🚀 Backend ready on port {port}");
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var db = services.GetRequiredService<HospitalizacionDbContext>();
+        await db.Database.MigrateAsync();  // ← Aplica migraciones pendientes
+        Console.WriteLine("✅ Migraciones aplicadas");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠️ Error en migraciones: {ex.Message}");
+        // No lanzar excepción para no detener el deploy
+    }
+}
 app.Run();
