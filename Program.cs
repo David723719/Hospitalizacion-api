@@ -6,20 +6,25 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Puerto
+// Puerto para Railway
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// CORS abierto para evitar bloqueos desde Vercel y localhost.
+// 🔥 CORS para tu frontend en Vercel
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("FrontendPolicy", p => p
-        .SetIsOriginAllowed(_ => true)
+    options.AddPolicy("AllowAll", p => p
+        .WithOrigins(
+            "https://hospital-frontend-beryl.vercel.app",
+            "http://localhost:5173",
+            "https://hospitalizacion-api-production.up.railway.app"
+        )
         .AllowAnyHeader()
-        .AllowAnyMethod());
+        .AllowAnyMethod()
+        .AllowCredentials());
 });
 
-// Base de datos - Parseo DIRECTO de tu DATABASE_URL
+// 🗄️ Base de datos - Parseo DIRECTO de tu DATABASE_URL
 var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 if (!string.IsNullOrEmpty(dbUrl))
 {
@@ -44,44 +49,27 @@ else
 }
 
 builder.Services.AddControllers();
-
 var app = builder.Build();
 
-app.UseRouting();
-app.UseCors("FrontendPolicy");
-app.Use(async (context, next) =>
-{
-    context.Response.Headers["Access-Control-Allow-Origin"] = "*";
-    context.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
-    context.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
-    if (HttpMethods.IsOptions(context.Request.Method))
-    {
-        context.Response.StatusCode = StatusCodes.Status204NoContent;
-        return;
-    }
-    await next();
-});
-app.UseAuthorization();
-app.MapControllers();
-
-// 🔥 ENDPOINT DE PRUEBA: Siempre responde para verificar CORS/POST
-app.MapPost("/api/test", () => Results.Ok(new { mensaje = "POST funciona!", timestamp = DateTime.UtcNow }));
-app.MapGet("/api/test", () => Results.Ok(new { mensaje = "GET funciona!", timestamp = DateTime.UtcNow }));
-
-Console.WriteLine($"🚀 Backend ready on port {port}");
+// 🔥 MIGRACIONES AUTOMÁTICAS - CRÍTICO
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
     try
     {
         var db = services.GetRequiredService<HospitalizacionDbContext>();
-        await db.Database.MigrateAsync();  // ← Aplica migraciones pendientes
+        await db.Database.MigrateAsync();
         Console.WriteLine("✅ Migraciones aplicadas");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"⚠️ Error en migraciones: {ex.Message}");
-        // No lanzar excepción para no detener el deploy
+        Console.WriteLine($"❌ ERROR MIGRACIONES: {ex.Message}");
     }
 }
+
+app.UseCors("AllowAll");
+app.UseAuthorization();
+app.MapControllers();
+
+Console.WriteLine($"🚀 Backend ready on port {port}");
 app.Run();
