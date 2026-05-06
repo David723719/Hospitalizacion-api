@@ -13,36 +13,51 @@ public class PacientesController : ControllerBase
 
     [HttpGet("")]
     public async Task<IActionResult> Listar() => 
-        Ok(await _db.Pacientes.IgnoreQueryFilters().Select(p => new { p.Codigo, p.Nombre, p.FechaNacimiento, p.Estado }).ToListAsync());
+        Ok(await _db.Pacientes.Select(p => new { p.Codigo, p.Nombre, p.FechaNacimiento, p.Estado }).ToListAsync());
 
     [HttpPost("")]
     public async Task<IActionResult> Crear([FromBody] PacienteDto dto)
     {
-        Console.WriteLine($"📥 POST /pacientes: {dto?.Codigo}");
-        
-        if (string.IsNullOrWhiteSpace(dto?.Codigo))
-            return BadRequest(new { mensaje = "Código requerido" });
-        
-        // Ignorar filtros para verificar si existe (incluye inactivos)
-        if (await _db.Pacientes.IgnoreQueryFilters().AnyAsync(p => p.Codigo == dto.Codigo))
-            return BadRequest(new { mensaje = "El código ya existe" });
-        
-        var paciente = new Paciente 
-        { 
-            Codigo = dto.Codigo, 
-            Nombre = dto.Nombre ?? "Sin nombre", 
-            FechaNacimiento = dto.FechaNacimiento,
-            Estado = "Activo"
-        };
-        
-        _db.Pacientes.Add(paciente);
-        await _db.SaveChangesAsync();
-        Console.WriteLine($"✅ Paciente creado: {paciente.Codigo}");
-        
-        return CreatedAtAction(nameof(Listar), new { codigo = paciente.Codigo }, new { 
-            mensaje = "Paciente creado", 
-            paciente = new { paciente.Codigo, paciente.Nombre } 
-        });
+        try
+        {
+            if (string.IsNullOrWhiteSpace(dto?.Codigo))
+                return BadRequest(new { mensaje = "Código requerido" });
+            if (await _db.Pacientes.AnyAsync(p => p.Codigo == dto.Codigo))
+                return BadRequest(new { mensaje = "Ya existe" });
+            
+            var paciente = new Paciente { 
+                Codigo = dto.Codigo, 
+                Nombre = dto.Nombre ?? "Sin nombre", 
+                FechaNacimiento = dto.FechaNacimiento,
+                Estado = "Activo"
+            };
+            _db.Pacientes.Add(paciente);
+            await _db.SaveChangesAsync();
+            return CreatedAtAction(nameof(Listar), new { codigo = paciente.Codigo }, new { mensaje = "Paciente creado", paciente.Codigo });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Error crear paciente: {ex.Message}");
+            return StatusCode(500, new { mensaje = "Error interno" });
+        }
+    }
+
+    [HttpDelete("{codigo}")]
+    public async Task<IActionResult> Eliminar(string codigo)
+    {
+        try
+        {
+            var paciente = await _db.Pacientes.FirstOrDefaultAsync(p => p.Codigo == codigo);
+            if (paciente == null) return NotFound(new { mensaje = "No encontrado" });
+            paciente.Estado = "Inactivo";
+            await _db.SaveChangesAsync();
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Error eliminar: {ex.Message}");
+            return StatusCode(500, new { mensaje = "Error interno" });
+        }
     }
 }
 
