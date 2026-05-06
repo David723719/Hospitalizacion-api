@@ -6,25 +6,18 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Puerto para Railway
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// 🔥 CORS para Vercel + localhost
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", p => p
-        .WithOrigins(
-            "https://hospital-frontend-beryl.vercel.app",
-            "http://localhost:5173",
-            "https://hospitalizacion-api-production.up.railway.app"
-        )
-        .AllowAnyHeader()
-        .AllowAnyMethod()
-        .AllowCredentials());
+        .WithOrigins("https://hospital-frontend-beryl.vercel.app", "http://localhost:5173")
+        .AllowAnyHeader().AllowAnyMethod().AllowCredentials());
 });
 
-// 🗄️ Base de datos - Parseo de DATABASE_URL de Railway
+// Base de datos
 var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 if (!string.IsNullOrEmpty(dbUrl))
 {
@@ -32,16 +25,13 @@ if (!string.IsNullOrEmpty(dbUrl))
     var up = uri.UserInfo.Split(':');
     var cs = new NpgsqlConnectionStringBuilder
     {
-        Host = uri.Host,
-        Port = uri.Port,
-        Username = up[0],
-        Password = up[1],
+        Host = uri.Host, Port = uri.Port,
+        Username = up[0], Password = up[1],
         Database = uri.AbsolutePath.Trim('/'),
-        SslMode = SslMode.Require,
-        Timeout = 30
+        SslMode = SslMode.Require, Timeout = 30
     };
     builder.Services.AddDbContext<HospitalizacionDbContext>(o => o.UseNpgsql(cs.ConnectionString));
-    Console.WriteLine($"✅ DB: {cs.Host}:{cs.Port}/{cs.Database}");
+    Console.WriteLine($"✅ DB Config: {cs.Host}:{cs.Port}/{cs.Database}");
 }
 else
 {
@@ -52,54 +42,63 @@ else
 builder.Services.AddControllers();
 var app = builder.Build();
 
-// 🔥 AUTO-FIX: Agregar columnas faltantes en la tabla Camas (si no existen)
-using (var scope = app.Services.CreateScope())
+// 🔥 DEBUG: Endpoint para ver estado real de la DB
+app.MapGet("/api/debug", async (HospitalizacionDbContext db) =>
 {
     try
     {
-        var db = scope.ServiceProvider.GetRequiredService<HospitalizacionDbContext>();
+        // Verificar conexión
+        await db.Database.CanConnectAsync();
         
-        // Verificar y crear tabla si no existe
-        await db.Database.EnsureCreatedAsync();
+        // Listar tablas existentes
+        var tables = await db.Database.SqlQueryRaw<string>(
+            @"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+        ).ToListAsync();
         
-        // Agregar columna EstadoOperativo si falta
-        await db.Database.ExecuteSqlRawAsync(@"
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'Camas' AND column_name = 'EstadoOperativo'
-                ) THEN 
-                    ALTER TABLE ""Camas"" ADD COLUMN ""EstadoOperativo"" VARCHAR(50) DEFAULT 'Disponible'; 
-                END IF;
-            END $$;
-        ");
+        // Verificar columnas de Camas
+        var columns = await db.Database.SqlQueryRaw<string>(
+            @"SELECT column_name FROM information_schema.columns WHERE table_name = 'Camas'"
+        ).ToListAsync();
         
-        // Agregar columna Estado si falta
-        await db.Database.ExecuteSqlRawAsync(@"
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'Camas' AND column_name = 'Estado'
-                ) THEN 
-                    ALTER TABLE ""Camas"" ADD COLUMN ""Estado"" VARCHAR(50) DEFAULT 'Activo'; 
-                END IF;
-            END $$;
-        ");
-        
-        Console.WriteLine("✅ Tabla Camas verificada - Columnas EstadoOperativo y Estado listas");
+        return Results.Ok(new { 
+            connected = true, 
+            tables, 
+            camasColumns = columns,
+            message = "DB OK - Revisa camasColumns para ver si falta EstadoOperativo"
+        });
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"⚠️ Warning al verificar DB: {ex.Message}");
+        Console.WriteLine($"❌ DEBUG ERROR: {ex.Message}");
+        Console.WriteLine($"❌ Stack: {ex.StackTrace}");
+        return Results.Ok(new { connected = false, error = ex.Message, stack = ex.StackTrace });
     }
-}
+});
 
-// 🔥 Endpoint de salud para pruebas
-app.MapGet("/api/health", () => Results.Ok(new { status = "ok", timestamp = DateTime.UtcNow }));
+// 🔥 LOGGING FORZADO: Middleware que registra TODO
+app.Use(async (context, next) =>
+{
+    Console.WriteLine($"📥 {context.Request.Method} {context.Request.Path}");
+    try
+    {
+        await next();
+        Console.WriteLine($"📤 {context.Response.StatusCode}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌❌❌ UNHANDLED EXCEPTION ❌❌❌");
+        Console.WriteLine($"Path: {context.Request.Path}");
+        Console.WriteLine($"Message: {ex.Message}");
+        Console.WriteLine($"Stack: {ex.StackTrace}");
+        if (ex.InnerException != null)
+        {
+            Console.WriteLine($"Inner: {ex.InnerException.Message}");
+            Console.WriteLine($"Inner Stack: {ex.InnerException.StackTrace}");
+        }
+        throw;
+    }
+});
 
-// 🔥 ORDEN CRÍTICO: CORS antes de MapControllers
 app.UseCors("AllowAll");
 app.UseAuthorization();
 app.MapControllers();

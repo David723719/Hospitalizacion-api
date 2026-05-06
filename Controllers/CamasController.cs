@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using HospitalizacionAPI.Data;
-using HospitalizacionAPI.Models;
 
 namespace HospitalizacionAPI.Controllers;
 
@@ -11,44 +10,68 @@ public class CamasController : ControllerBase
     private readonly HospitalizacionDbContext _db;
     public CamasController(HospitalizacionDbContext db) => _db = db;
 
-    // ✅ GET /api/camas
     [HttpGet("")]
     public async Task<IActionResult> Listar()
     {
         try
         {
-            var camas = await _db.Camas
-                .Select(c => new { c.Codigo, c.Unidad, c.Tipo, c.EstadoOperativo, c.Estado })
+            Console.WriteLine("📥 GET /camas - Ejecutando SQL directo");
+            
+            // SQL DIRECTO - Sin LINQ, sin generación automática
+            var camas = await _db.Database
+                .SqlQueryRaw<CamaResult>(@"
+                    SELECT ""Codigo"", ""Unidad"", ""Tipo"", 
+                           COALESCE(""EstadoOperativo"", 'Disponible') as ""EstadoOperativo"",
+                           COALESCE(""Estado"", 'Activo') as ""Estado""
+                    FROM ""Camas""
+                ")
                 .ToListAsync();
+            
+            Console.WriteLine($"✅ Listadas {camas.Count} camas");
             return Ok(camas);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Error listar camas: {ex.Message}");
-            return StatusCode(500, new { mensaje = "Error interno", error = ex.Message });
+            Console.WriteLine($"❌❌❌ ERROR LISTAR CAMAS ❌❌❌");
+            Console.WriteLine($"Message: {ex.Message}");
+            Console.WriteLine($"Stack: {ex.StackTrace}");
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"Inner: {ex.InnerException.Message}");
+            }
+            return StatusCode(500, new { 
+                mensaje = "Error interno", 
+                error = ex.Message,
+                inner = ex.InnerException?.Message,
+                hint = "Revisa /api/debug para ver estado de la DB"
+            });
         }
     }
 
-    // ✅ GET /api/camas/disponibles
     [HttpGet("disponibles")]
     public async Task<IActionResult> Disponibles()
     {
         try
         {
-            var camas = await _db.Camas
-                .Where(c => c.EstadoOperativo == "Disponible" && c.Estado == "Activo")
-                .Select(c => new { c.Codigo, c.Unidad, c.Tipo })
+            var camas = await _db.Database
+                .SqlQueryRaw<CamaResult>(@"
+                    SELECT ""Codigo"", ""Unidad"", ""Tipo"",
+                           COALESCE(""EstadoOperativo"", 'Disponible') as ""EstadoOperativo"",
+                           COALESCE(""Estado"", 'Activo') as ""Estado""
+                    FROM ""Camas""
+                    WHERE COALESCE(""EstadoOperativo"", 'Disponible') = 'Disponible'
+                    AND COALESCE(""Estado"", 'Activo') = 'Activo'
+                ")
                 .ToListAsync();
             return Ok(camas);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"❌ Error disponibles: {ex.Message}");
-            return StatusCode(500, new { mensaje = "Error interno" });
+            return StatusCode(500, new { mensaje = "Error interno", error = ex.Message });
         }
     }
 
-    // ✅ POST /api/camas - CREAR CAMA
     [HttpPost("")]
     public async Task<IActionResult> Crear([FromBody] CamaDto dto)
     {
@@ -59,54 +82,46 @@ public class CamasController : ControllerBase
             if (string.IsNullOrWhiteSpace(dto?.Codigo))
                 return BadRequest(new { mensaje = "Código requerido" });
             
-            if (await _db.Camas.AnyAsync(c => c.Codigo == dto.Codigo))
+            // Verificar existencia con SQL directo
+            var existe = await _db.Database
+                .SqlQueryRaw<string>(@"SELECT ""Codigo"" FROM ""Camas"" WHERE ""Codigo"" = @p0", dto.Codigo)
+                .FirstOrDefaultAsync();
+            
+            if (existe != null)
                 return BadRequest(new { mensaje = "Ya existe" });
             
-            var cama = new Cama { 
-                Codigo = dto.Codigo, 
-                Unidad = dto.Unidad ?? "General", 
-                Tipo = dto.Tipo ?? "Estándar",
-                EstadoOperativo = "Disponible",
-                Estado = "Activo"
-            };
+            // Insertar con SQL directo
+            await _db.Database.ExecuteSqlRawAsync(@"
+                INSERT INTO ""Camas"" (""Codigo"", ""Unidad"", ""Tipo"", ""EstadoOperativo"", ""Estado"")
+                VALUES (@p0, @p1, @p2, @p3, @p4)
+            ", dto.Codigo, dto.Unidad ?? "General", dto.Tipo ?? "Estándar", "Disponible", "Activo");
             
-            _db.Camas.Add(cama);
-            await _db.SaveChangesAsync();
-            Console.WriteLine($"✅ Cama creada: {cama.Codigo}");
-            
-            return CreatedAtAction(nameof(Listar), new { codigo = cama.Codigo }, new { 
-                mensaje = "Cama creada", 
-                cama = new { cama.Codigo, cama.Unidad, cama.Tipo, cama.EstadoOperativo } 
+            Console.WriteLine($"✅ Cama creada: {dto.Codigo}");
+            return CreatedAtAction(nameof(Listar), new { codigo = dto.Codigo }, new { 
+                mensaje = "Creada", Codigo = dto.Codigo 
             });
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Error crear cama: {ex.Message}");
-            return StatusCode(500, new { mensaje = "Error interno", error = ex.Message });
-        }
-    }
-
-    // ✅ PUT /api/camas/{codigo}/estado
-    [HttpPut("{codigo}/estado")]
-    public async Task<IActionResult> CambiarEstado(string codigo, [FromBody] CambiarEstadoDto req)
-    {
-        try
-        {
-            var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == codigo);
-            if (cama == null) return NotFound(new { mensaje = "Cama no encontrada" });
-            
-            cama.EstadoOperativo = req.EstadoOperativo;
-            await _db.SaveChangesAsync();
-            return Ok(new { mensaje = "Estado actualizado", nuevoEstado = req.EstadoOperativo });
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"❌ Error cambiar estado: {ex.Message}");
-            return StatusCode(500, new { mensaje = "Error interno" });
+            Console.WriteLine($"❌❌❌ ERROR CREAR CAMA ❌❌❌");
+            Console.WriteLine($"Message: {ex.Message}");
+            Console.WriteLine($"Stack: {ex.StackTrace}");
+            return StatusCode(500, new { 
+                mensaje = "Error interno", 
+                error = ex.Message,
+                hint = "Revisa /api/debug para ver columnas de la tabla Camas"
+            });
         }
     }
 }
 
-// DTOs al final del archivo
+// Resultado simple para SQL Query
+public class CamaResult { 
+    public string Codigo { get; set; } = ""; 
+    public string Unidad { get; set; } = ""; 
+    public string Tipo { get; set; } = ""; 
+    public string EstadoOperativo { get; set; } = "Disponible"; 
+    public string Estado { get; set; } = "Activo"; 
+}
+
 public class CamaDto { public string? Codigo { get; set; } public string? Unidad { get; set; } public string? Tipo { get; set; } }
-public class CambiarEstadoDto { public string EstadoOperativo { get; set; } = ""; }
