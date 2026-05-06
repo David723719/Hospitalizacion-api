@@ -68,19 +68,12 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-else
-{
-    // 🔒 En producción: Swagger protegido o deshabilitado
-    // Opcional: app.UseSwagger(); si quieres que sea público
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseCors("CorsPolicy");
 app.UseAuthorization();
+app.MapGet("/", () => Results.Redirect("/swagger"));
 app.MapControllers();
 
 Console.WriteLine($"✅ Backend listo en puerto {port}");
