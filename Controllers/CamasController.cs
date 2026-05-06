@@ -2,8 +2,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using HospitalizacionAPI.Data;
 using HospitalizacionAPI.Models;
-using System.Collections.Generic; // Para List y Dictionary
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace HospitalizacionAPI.Controllers;
 
@@ -11,30 +12,46 @@ namespace HospitalizacionAPI.Controllers;
 public class CamasController : ControllerBase
 {
     private readonly HospitalizacionDbContext _db;
-
     public CamasController(HospitalizacionDbContext db) => _db = db;
 
-    // 🔹 GET: Ver todas tus camas
-    [HttpGet]
-    public async Task<IActionResult> Get() => 
+    // ✅ GET /api/camas (Ruta explícita para evitar conflicto 405)
+    [HttpGet("")]
+    public async Task<IActionResult> Listar() => 
         Ok(await _db.Camas.Select(c => new { 
-            c.Codigo, 
-            c.Unidad, 
-            c.Tipo, 
-            c.EstadoOperativo, 
-            c.Estado, 
-            c.CodigoLogistica 
+            c.Codigo, c.Unidad, c.Tipo, c.EstadoOperativo, c.Estado, c.CodigoLogistica 
         }).ToListAsync());
 
-    // 🔹 GET: Solo disponibles para pacientes
+    // ✅ GET /api/camas/disponibles
     [HttpGet("disponibles")]
-    public async Task<IActionResult> GetDisponibles() => 
+    public async Task<IActionResult> ListarDisponibles() => 
         Ok(await _db.Camas
             .Where(c => c.EstadoOperativo == "Disponible" && c.Estado == "Activo")
             .Select(c => new { c.Codigo, c.Unidad, c.Tipo })
             .ToListAsync());
 
-    // 🔥 POST: RECIBE CAMAS DESDE LOGÍSTICA Y LAS CREA EN TU TABLA
+    // ✅ POST /api/camas (Para registrar manualmente desde tu frontend)
+    [HttpPost("")]
+    public async Task<IActionResult> Crear([FromBody] CamaDto dto)
+    {
+        if (await _db.Camas.AnyAsync(c => c.Codigo == dto.Codigo))
+            return BadRequest(new { mensaje = "El código de cama ya existe" });
+
+        var cama = new Cama
+        {
+            Codigo = dto.Codigo ?? "CAM-" + Guid.NewGuid().ToString().Substring(0, 6).ToUpper(),
+            CodigoLogistica = dto.CodigoLogistica,
+            Unidad = dto.Unidad ?? "General",
+            Tipo = dto.Tipo ?? "Estándar",
+            EstadoOperativo = "Disponible",
+            Estado = "Activo",
+            FechaRegistro = DateTime.UtcNow
+        };
+        _db.Camas.Add(cama);
+        await _db.SaveChangesAsync();
+        return CreatedAtAction(nameof(Listar), new { codigo = cama.Codigo }, new { mensaje = "Cama creada", cama });
+    }
+
+    // 🔥 POST /api/camas/registrar-desde-logistica (Tu código original)
     [HttpPost("registrar-desde-logistica")]
     public async Task<IActionResult> RegistrarDesdeLogistica([FromBody] List<CamaLogisticaDto> camasRecibidas)
     {
@@ -46,64 +63,36 @@ public class CamasController : ControllerBase
 
         foreach (var c in camasRecibidas)
         {
-            // Validar que no exista ya por CódigoLogística
-            if (await _db.Camas.AnyAsync(x => x.CodigoLogistica == c.CodigoLogistica))
-            { 
-                yaExisten++; 
-                continue; 
-            }
-
-            // Generar código único de forma segura
+            if (await _db.Camas.AnyAsync(x => x.CodigoLogistica == c.CodigoLogistica)) { yaExisten++; continue; }
+            
             string codigoUnico = "CAM-HOSP-" + Guid.NewGuid().ToString().Substring(0, 6).ToUpper();
-
-            creadas.Add(new Cama
-            {
-                Codigo = codigoUnico,
-                CodigoLogistica = c.CodigoLogistica,
-                Unidad = c.Unidad,
-                Tipo = c.Tipo,
-                EstadoOperativo = "Disponible",
-                Estado = "Activo",
-                FechaRegistro = DateTime.UtcNow
+            creadas.Add(new Cama {
+                Codigo = codigoUnico, CodigoLogistica = c.CodigoLogistica,
+                Unidad = c.Unidad, Tipo = c.Tipo,
+                EstadoOperativo = "Disponible", Estado = "Activo", FechaRegistro = DateTime.UtcNow
             });
         }
 
-        if (!creadas.Any())
-            return Ok(new { mensaje = $"Todas las camas ya existían ({yaExisten} encontradas)", creadas = 0 });
-
-        // Guardar en la base de datos
+        if (!creadas.Any()) return Ok(new { mensaje = $"Todas existían ({yaExisten})", creadas = 0 });
+        
         _db.Camas.AddRange(creadas);
         await _db.SaveChangesAsync();
-
-        return StatusCode(201, new 
-        { 
-            mensaje = $"{creadas.Count} cama(s) creadas exitosamente",
-            nuevas = creadas.Count,
-            ya_existian = yaExisten,
-            camas = creadas.Select(c => new { c.Codigo, c.CodigoLogistica, c.Unidad, c.Tipo })
-        });
+        return StatusCode(201, new { mensaje = $"{creadas.Count} creadas", nuevas = creadas.Count, camas = creadas });
     }
 
-    // 🔹 PUT: Cambiar estado (Disponible, Ocupada, Mantenimiento)
+    // ✅ PUT /api/camas/{codigo}/estado
     [HttpPut("{codigo}/estado")]
     public async Task<IActionResult> CambiarEstado(string codigo, [FromBody] Dictionary<string, string> request)
     {
         if (!request.TryGetValue("estadoOperativo", out var nuevoEstado))
-            return BadRequest(new { mensaje = "Debe enviar 'estadoOperativo' en el cuerpo." });
+            return BadRequest(new { mensaje = "Debe enviar 'estadoOperativo'" });
 
         var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == codigo);
         if (cama == null) return NotFound(new { mensaje = "Cama no encontrada" });
 
-        // Validación de seguridad
-        if (nuevoEstado == "Disponible")
-        {
-            var hayPaciente = await _db.Admisiones.AnyAsync(a => a.CamaCodigo == codigo && a.Estado == "Activo");
-            if (hayPaciente) 
-                return BadRequest(new { mensaje = "No se puede liberar: hay una admisión activa en esta cama." });
-        }
-
         cama.EstadoOperativo = nuevoEstado;
         await _db.SaveChangesAsync();
-        return Ok(new { mensaje = $"Estado actualizado a {nuevoEstado}" });
+        return Ok(new { mensaje = $"Estado: {nuevoEstado}" });
     }
 }
+public class CamaDto { public string? Codigo { get; set; } public string? CodigoLogistica { get; set; } public string? Unidad { get; set; } public string? Tipo { get; set; } }

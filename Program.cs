@@ -1,4 +1,4 @@
-// 🔒 CORS: Permite frontend local + Vercel + Railway
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("CorsPolicy", policy =>
@@ -6,8 +6,8 @@ builder.Services.AddCors(options =>
         policy.SetIsOriginAllowed(origin =>
         {
             var o = origin.ToLowerInvariant();
-            // ✅ Permitir: localhost (frontend dev), Vercel, Railway, Render, Ngrok, redes locales
-            return o.Contains("localhost:5173") ||  // ← Frontend Vite local
+           
+            return o.Contains("localhost:5173") ||  // ← Frontend Vite local (CRÍTICO)
                    o.Contains("localhost:5200") ||  // ← Backend local
                    o.Contains("127.0.0.1") ||
                    o.Contains("vercel.app") ||
@@ -20,6 +20,6 @@ builder.Services.AddCors(options =>
         })
         .AllowAnyHeader()
         .AllowAnyMethod()
-        .AllowCredentials(); // ← Importante para cookies/auth
+        .AllowCredentials();
     });
 });

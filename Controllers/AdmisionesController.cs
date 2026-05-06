@@ -13,7 +13,8 @@ public class AdmisionesController : ControllerBase
     private readonly HospitalizacionDbContext _db;
     public AdmisionesController(HospitalizacionDbContext db) => _db = db;
 
-    [HttpGet]
+    // ✅ GET /api/admisiones (Ruta explícita)
+    [HttpGet("")]
     public async Task<IActionResult> Get() => Ok(await _db.Admisiones.Select(a => new AdmisionDto {
         Codigo = a.Codigo, PacienteCodigo = a.PacienteCodigo, CamaCodigo = a.CamaCodigo,
         FechaIngreso = a.FechaIngreso, FechaEgreso = a.FechaEgreso, Especialidad = a.Especialidad, Estado = a.Estado
@@ -29,44 +30,28 @@ public class AdmisionesController : ControllerBase
     public async Task<IActionResult> GetByCode(string codigo)
     {
         var a = await _db.Admisiones.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Codigo == codigo);
-        return a == null ? NotFound() : Ok(new AdmisionDto { 
+        return a == null ? NotFound(new { mensaje = "Admisión no encontrada" }) : Ok(new AdmisionDto { 
             Codigo = a.Codigo, PacienteCodigo = a.PacienteCodigo, CamaCodigo = a.CamaCodigo,
             FechaIngreso = a.FechaIngreso, FechaEgreso = a.FechaEgreso, Especialidad = a.Especialidad 
         });
     }
 
-    [HttpGet("buscarReal/{codigo}")]
-    public async Task<IActionResult> GetByCodeActive(string codigo)
-    {
-        var a = await _db.Admisiones.FirstOrDefaultAsync(x => x.Codigo == codigo);
-        return a == null ? NotFound() : Ok(new AdmisionDto { 
-            Codigo = a.Codigo, PacienteCodigo = a.PacienteCodigo, CamaCodigo = a.CamaCodigo,
-            FechaIngreso = a.FechaIngreso, FechaEgreso = a.FechaEgreso, Especialidad = a.Especialidad 
-        });
-    }
-
- 
-    [HttpPost]
+    [HttpPost("")]
     public async Task<IActionResult> Post([FromBody] AdmisionDto dto)
     {
         if (dto == null) return BadRequest(new { mensaje = "Cuerpo de la petición vacío" });
-
-        
         if (await _db.Admisiones.AnyAsync(x => x.Codigo == dto.Codigo))
             return BadRequest(new { mensaje = "El código de admisión ya existe" });
 
-        
-        if (dto.FechaEgreso.HasValue && dto.FechaEgreso.Value <= dto.FechaIngreso)
-            return BadRequest(new { mensaje = "La fecha de egreso debe ser posterior a la fecha de ingreso" });
+        // Validar que la cama esté DISPONIBLE operativamente
+        var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == dto.CamaCodigo && c.EstadoOperativo == "Disponible" && c.Estado == "Activo");
+        if (cama == null)
+            return BadRequest(new { mensaje = "La cama seleccionada no está disponible o no existe." });
 
-       
         var pacienteActivo = await _db.Pacientes.AnyAsync(p => p.Codigo == dto.PacienteCodigo && p.Estado == "Activo");
-        var camaActiva = await _db.Camas.AnyAsync(c => c.Codigo == dto.CamaCodigo && c.Estado == "Activo");
-        
-        if (!pacienteActivo || !camaActiva)
-            return BadRequest(new { mensaje = "Paciente o Cama no existen o están inactivos" });
+        if (!pacienteActivo)
+            return BadRequest(new { mensaje = "El paciente no está activo." });
 
-        
         var admision = new Admision
         {
             Codigo = dto.Codigo,
@@ -75,8 +60,12 @@ public class AdmisionesController : ControllerBase
             FechaIngreso = dto.FechaIngreso,
             FechaEgreso = dto.FechaEgreso,
             Especialidad = dto.Especialidad,
-            Estado = dto.Estado ?? "Activo"
+            Estado = dto.Estado ?? "Activo",
+            FechaRegistro = DateTime.UtcNow
         };
+
+        // Opcional: Cambiar estado de la cama a Ocupada automáticamente
+        cama.EstadoOperativo = "Ocupada";
 
         _db.Admisiones.Add(admision);
         await _db.SaveChangesAsync();
@@ -89,9 +78,6 @@ public class AdmisionesController : ControllerBase
     {
         var a = await _db.Admisiones.FirstOrDefaultAsync(x => x.Codigo == codigo);
         if (a == null) return NotFound(new { mensaje = "No encontrado" });
-
-        if (dto.FechaEgreso.HasValue && dto.FechaEgreso.Value <= a.FechaIngreso)
-            return BadRequest(new { mensaje = "La fecha de egreso debe ser posterior al ingreso" });
 
         a.PacienteCodigo = dto.PacienteCodigo;
         a.CamaCodigo = dto.CamaCodigo;
@@ -117,6 +103,12 @@ public class AdmisionesController : ControllerBase
             return BadRequest(new { mensaje = "NO SE PUEDE DAR DE ALTA. Tratamientos activos pendientes." });
 
         admision.Estado = "Inactivo";
+        admision.FechaEgreso = DateTime.UtcNow; // Registrar fecha de alta
+        
+        // Liberar la cama
+        var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == admision.CamaCodigo);
+        if (cama != null) cama.EstadoOperativo = "Disponible";
+
         await _db.SaveChangesAsync();
         return NoContent();
     }
