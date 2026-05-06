@@ -10,7 +10,41 @@ public class AdmisionesController : ControllerBase
 {
     private readonly HospitalizacionDbContext _db;
     public AdmisionesController(HospitalizacionDbContext db) => _db = db;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using HospitalizacionAPI.Data;
+using HospitalizacionAPI.Models;
 
+namespace HospitalizacionAPI.Controllers;
+
+[Route("api/admisiones"), ApiController]
+public class AdmisionesController : ControllerBase
+{
+    private readonly HospitalizacionDbContext _db;
+    public AdmisionesController(HospitalizacionDbContext db) => _db = db;
+
+    [HttpGet]
+    public async Task<IActionResult> Get() => 
+        Ok(await _db.Database.SqlQueryRaw<AdmisionResult>(@"SELECT ""Codigo"", ""PacienteCodigo"", ""CamaCodigo"", ""FechaIngreso"", ""Especialidad"", ""Estado"" FROM ""Admisiones""").ToListAsync());
+
+    [HttpPost]
+    public async Task<IActionResult> Post([FromBody] CreateAdmisionDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto?.Codigo)) return BadRequest(new { mensaje = "Código requerido" });
+        
+        // ✅ FIX: Forzar fecha a UTC
+        var fechaUtc = DateTime.SpecifyKind(dto.FechaIngreso, DateTimeKind.Utc);
+
+        await _db.Database.ExecuteSqlRawAsync(
+            @"INSERT INTO ""Admisiones"" (""Codigo"", ""PacienteCodigo"", ""CamaCodigo"", ""FechaIngreso"", ""Especialidad"", ""Estado"") VALUES (@p0, @p1, @p2, @p3, @p4, @p5)",
+            dto.Codigo, dto.PacienteCodigo, dto.CamaCodigo, fechaUtc, dto.Especialidad, "Activo");
+        
+        return Created("", new { mensaje = "Admitido", codigo = dto.Codigo });
+    }
+}
+
+public class CreateAdmisionDto { public string Codigo { get; set; } = ""; public string PacienteCodigo { get; set; } = ""; public string CamaCodigo { get; set; } = ""; public DateTime FechaIngreso { get; set; } public string Especialidad { get; set; } = ""; }
+public class AdmisionResult { public string Codigo { get; set; } = ""; public string PacienteCodigo { get; set; } = ""; public string CamaCodigo { get; set; } = ""; public DateTime FechaIngreso { get; set; } public string Especialidad { get; set; } = ""; public string Estado { get; set; } = ""; }
     [HttpGet("")]
     public async Task<IActionResult> Listar() => Ok(await _db.Admisiones.Select(a => new { 
         a.Codigo, a.PacienteCodigo, a.CamaCodigo, a.FechaIngreso, a.FechaEgreso, a.Especialidad, a.Estado 
