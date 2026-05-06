@@ -68,6 +68,24 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+
+    try
+    {
+        var db = services.GetRequiredService<HospitalizacionDbContext>();
+        db.Database.Migrate();
+        logger.LogInformation("Migraciones aplicadas correctamente.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error aplicando migraciones al iniciar.");
+        throw;
+    }
+}
+
 app.UseSwagger();
 app.UseSwaggerUI();
 
