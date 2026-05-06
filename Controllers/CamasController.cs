@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using HospitalizacionAPI.Data;
+using HospitalizacionAPI.Models;
 
 namespace HospitalizacionAPI.Controllers;
 
@@ -10,81 +11,61 @@ public class CamasController : ControllerBase
     private readonly HospitalizacionDbContext _db;
     public CamasController(HospitalizacionDbContext db) => _db = db;
 
+    // ✅ GET /api/camas - Solo columnas que existen
     [HttpGet("")]
     public async Task<IActionResult> Listar()
     {
-        try
-        {
-            // Usamos SQL directo para evitar errores de Entity Framework si el modelo no coincide exactamente
-            var camas = await _db.Database
-                .SqlQueryRaw<CamaSimple>(@"
-                    SELECT ""Codigo"", ""Unidad"", ""Tipo"", 
-                           COALESCE(""EstadoOperativo"", 'Disponible') AS ""EstadoOperativo""
-                    FROM ""Camas""
-                ")
-                .ToListAsync();
-            
-            return Ok(camas);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"❌ Error en Listar Camas: {ex.Message}");
-            return StatusCode(500, new { mensaje = "Error interno del servidor", error = ex.Message });
-        }
+        var camas = await _db.Camas
+            .Select(c => new { c.Codigo, c.Unidad, c.Tipo, c.Estado })
+            .ToListAsync();
+        return Ok(camas);
     }
 
+    // ✅ GET /api/camas/disponibles - Filtrar por Estado = 'Activo'
     [HttpGet("disponibles")]
     public async Task<IActionResult> Disponibles()
     {
-        try
-        {
-            var camas = await _db.Database
-                .SqlQueryRaw<CamaSimple>(@"
-                    SELECT ""Codigo"", ""Unidad"", ""Tipo"", 
-                           COALESCE(""EstadoOperativo"", 'Disponible') AS ""EstadoOperativo""
-                    FROM ""Camas""
-                    WHERE COALESCE(""EstadoOperativo"", 'Disponible') = 'Disponible'
-                ")
-                .ToListAsync();
-            
-            return Ok(camas);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { mensaje = "Error al obtener disponibles", error = ex.Message });
-        }
+        var camas = await _db.Camas
+            .Where(c => c.Estado == "Activo")
+            .Select(c => new { c.Codigo, c.Unidad, c.Tipo })
+            .ToListAsync();
+        return Ok(camas);
     }
 
+    // ✅ POST /api/camas - Crear con columnas reales
     [HttpPost("")]
     public async Task<IActionResult> Crear([FromBody] CamaDto dto)
     {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(dto?.Codigo))
-                return BadRequest(new { mensaje = "Código requerido" });
+        if (string.IsNullOrWhiteSpace(dto?.Codigo))
+            return BadRequest(new { mensaje = "Código requerido" });
+        
+        if (await _db.Camas.AnyAsync(c => c.Codigo == dto.Codigo))
+            return BadRequest(new { mensaje = "Ya existe" });
+        
+        var cama = new Cama { 
+            Codigo = dto.Codigo, 
+            Unidad = dto.Unidad ?? "General", 
+            Tipo = dto.Tipo ?? "Estándar",
+            Estado = "Activo"  // ← Solo Estado
+        };
+        
+        _db.Camas.Add(cama);
+        await _db.SaveChangesAsync();
+        return CreatedAtAction(nameof(Listar), new { codigo = cama.Codigo }, new { mensaje = "Creada", cama.Codigo });
+    }
 
-            // Insertar directamente
-            await _db.Database.ExecuteSqlRawAsync(@"
-                INSERT INTO ""Camas"" (""Codigo"", ""Unidad"", ""Tipo"", ""EstadoOperativo"")
-                VALUES (@p0, @p1, @p2, @p3)
-            ", dto.Codigo, dto.Unidad ?? "General", dto.Tipo ?? "Estándar", "Disponible");
-
-            return CreatedAtAction(nameof(Listar), new { codigo = dto.Codigo }, new { mensaje = "Cama creada" });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { mensaje = "Error al crear", error = ex.Message });
-        }
+    // ✅ PUT /api/camas/{codigo}/estado - Cambiar Estado (Activo/Inactivo)
+    [HttpPut("{codigo}/estado")]
+    public async Task<IActionResult> CambiarEstado(string codigo, [FromBody] CambiarEstadoDto req)
+    {
+        var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == codigo);
+        if (cama == null) return NotFound(new { mensaje = "No encontrada" });
+        
+        cama.Estado = req.Estado;  // ← Cambia Estado, no EstadoOperativo
+        await _db.SaveChangesAsync();
+        return Ok(new { mensaje = "Actualizado" });
     }
 }
 
-// Clase simple para mapear el resultado del SQL
-public class CamaSimple 
-{ 
-    public string Codigo { get; set; } = ""; 
-    public string Unidad { get; set; } = ""; 
-    public string Tipo { get; set; } = ""; 
-    public string EstadoOperativo { get; set; } = "Disponible"; 
-}
-
 public class CamaDto { public string? Codigo { get; set; } public string? Unidad { get; set; } public string? Tipo { get; set; } }
+public class CambiarEstadoDto { public string Estado { get; set; } = "Activo"; }  // ← Solo Estado

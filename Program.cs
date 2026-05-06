@@ -100,4 +100,13 @@ app.MapControllers();
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", time = DateTime.UtcNow }));
 
 Console.WriteLine($"🚀 Backend listo en puerto {port}");
-app.Run();
+app.Run();namespace HospitalizacionAPI.Models;
+
+public class Cama
+{
+    public int Id { get; set; }
+    public string Codigo { get; set; } = string.Empty;
+    public string Unidad { get; set; } = "General";
+    public string Tipo { get; set; } = "Estándar";
+    public string Estado { get; set; } = "Activo";  // ← Solo Estado, NO EstadoOperativo
+}
