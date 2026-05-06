@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "PqG4aq1z5wnpiSJ05H0OS+D7CSuQwum7MBU0UFR26dk=",
+  "Source": "HospitalizacionAPI",
+  "BasePath": "_content/HospitalizacionAPI",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}
