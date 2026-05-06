@@ -6,30 +6,28 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Puerto para Railway
+// 1. Configuración del puerto
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// 2. 🔥 CONFIGURACIÓN CORS COMPLETA
+// 2. CORS para Vercel y Localhost
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
         policy
-            // Permite los dominios de Vercel (producción y preview) y localhost
             .WithOrigins(
                 "https://hospital-frontend-beryl.vercel.app",
                 "https://hospital-frontend-44lke7rkt-david723719s-projects.vercel.app",
-                "http://localhost:5173",
-                "https://hospitalizacion-api-production.up.railway.app"
+                "http://localhost:5173"
             )
             .AllowAnyHeader()
-            .AllowAnyMethod()  // GET, POST, PUT, DELETE, OPTIONS
+            .AllowAnyMethod()
             .AllowCredentials();
     });
 });
 
-// 3. Base de datos - Parseo de DATABASE_URL de Railway
+// 3. Conexión a la Base de Datos
 var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 if (!string.IsNullOrEmpty(dbUrl))
 {
@@ -46,10 +44,11 @@ if (!string.IsNullOrEmpty(dbUrl))
         Timeout = 30
     };
     builder.Services.AddDbContext<HospitalizacionDbContext>(o => o.UseNpgsql(cs.ConnectionString));
-    Console.WriteLine($"✅ DB: {cs.Host}:{cs.Port}/{cs.Database}");
+    Console.WriteLine($"✅ DB Config OK: {cs.Host}:{cs.Port}/{cs.Database}");
 }
 else
 {
+    // Fallback local si no hay variable de entorno
     builder.Services.AddDbContext<HospitalizacionDbContext>(o => 
         o.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 }
@@ -57,25 +56,48 @@ else
 builder.Services.AddControllers();
 var app = builder.Build();
 
-// 🔥 DEBUG: Endpoint para verificar DB (puedes acceder a /api/debug)
-app.MapGet("/api/debug", async (HospitalizacionDbContext db) =>
+// 🔥 🔥  AUTO-REPARACIÓN DE BASE DE DATOS (CRÍTICO) 🔥 🔥 🔥
+// Este bloque se ejecuta al iniciar y crea la columna si falta.
+using (var scope = app.Services.CreateScope())
 {
+    var db = scope.ServiceProvider.GetRequiredService<HospitalizacionDbContext>();
     try
     {
-        await db.Database.CanConnectAsync();
-        return Results.Ok(new { connected = true, message = "Backend y DB conectados" });
+        // Verificar si la columna 'EstadoOperativo' existe en la tabla 'Camas'
+        var columnExists = db.Database.SqlQueryRaw<int>(@"
+            SELECT COUNT(*) 
+            FROM information_schema.columns 
+            WHERE table_name = 'Camas' AND column_name = 'EstadoOperativo'
+        ").AsEnumerable().FirstOrDefault() > 0;
+
+        if (!columnExists)
+        {
+            Console.WriteLine("⚠️ Columna 'EstadoOperativo' no encontrada. Creando...");
+            // Ejecutar SQL directo para agregar la columna
+            db.Database.ExecuteSqlRaw(@"
+                ALTER TABLE ""Camas"" 
+                ADD COLUMN ""EstadoOperativo"" VARCHAR(50) DEFAULT 'Disponible'
+            ");
+            Console.WriteLine("✅ Columna 'EstadoOperativo' creada exitosamente.");
+        }
+        else
+        {
+            Console.WriteLine("✅ Columna 'EstadoOperativo' ya existe.");
+        }
     }
     catch (Exception ex)
     {
-        return Results.Ok(new { connected = false, error = ex.Message });
+        Console.WriteLine($"❌ ERROR AUTO-REPARACIÓN: {ex.Message}");
     }
-});
+}
 
-// 4. ORDEN CRÍTICO DE MIDDLEWARES
-// CORS debe ir ANTES de Authorization y MapControllers
-app.UseCors("AllowAll");       
-app.UseAuthorization();        
-app.MapControllers();          
+// 4. Middleware y Rutas
+app.UseCors("AllowAll"); // CORS primero
+app.UseAuthorization();
+app.MapControllers();
 
-Console.WriteLine($"🚀 Backend ready on port {port}");
+// Endpoint de prueba
+app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", time = DateTime.UtcNow }));
+
+Console.WriteLine($"🚀 Backend listo en puerto {port}");
 app.Run();
