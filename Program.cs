@@ -31,11 +31,23 @@ builder.Services.AddCors(options =>
         else
         {
             // 🔒 Producción: Solo orígenes específicos
-            var allowedOrigins = builder.Configuration
+            var configuredOrigins = builder.Configuration
                 .GetSection("Security:AllowedOrigins")
                 .Get<string[]>() ?? Array.Empty<string>();
-            
-            policy.WithOrigins(allowedOrigins)
+
+            var allowedOrigins = configuredOrigins
+                .Where(origin => !string.IsNullOrWhiteSpace(origin))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // Fallback para poder consumir backend cloud desde frontend local.
+            if (!allowedOrigins.Contains("http://localhost:5173", StringComparer.OrdinalIgnoreCase))
+                allowedOrigins.Add("http://localhost:5173");
+
+            if (!allowedOrigins.Contains("http://127.0.0.1:5173", StringComparer.OrdinalIgnoreCase))
+                allowedOrigins.Add("http://127.0.0.1:5173");
+
+            policy.WithOrigins(allowedOrigins.ToArray())
                   .AllowAnyHeader()
                   .AllowAnyMethod()
                   .AllowCredentials();
