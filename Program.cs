@@ -5,10 +5,9 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 🔥 PUERTO PARA RAILWAY
-var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
-builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
-Console.WriteLine($"🔧 Listening on port {port}");
+// 🔥 FORZAR PUERTO 8080 PARA RAILWAY
+builder.WebHost.UseUrls("http://0.0.0.0:8080");
+Console.WriteLine("🔧 Listening on port 8080");
 
 // CORS
 builder.Services.AddCors(options =>
@@ -37,7 +36,7 @@ if (!string.IsNullOrEmpty(dbUrl))
         SslMode = SslMode.Require
     };
     builder.Services.AddDbContext<HospitalizacionDbContext>(o => o.UseNpgsql(cs.ConnectionString));
-    Console.WriteLine($"✅ DB Connected: {cs.Host}:{cs.Port}/{cs.Database}");
+    Console.WriteLine($"✅ DB Connected");
 }
 
 builder.Services.AddControllers();
@@ -49,11 +48,11 @@ app.UseCors("AllowAll");
 app.UseAuthorization();
 app.MapControllers();
 
-// ✅ ENDPOINT DE SALUD - DEBE IR DESPUÉS DE MapControllers
-app.MapGet("/health", () => Results.Ok(new { ok = true, port = port }));
-app.MapGet("/", () => Results.Ok(new { message = "Hospital API is running" }));
+// ENDPOINTS
+app.MapGet("/health", () => Results.Ok(new { ok = true, port = 8080 }));
+app.MapGet("/", () => Results.Ok(new { message = "Hospital API is running on port 8080" }));
 
-Console.WriteLine($"🚀 Backend ready on port {port}");
-Console.WriteLine($"🌐 Health check: http://localhost:{port}/health");
+Console.WriteLine("🚀 Backend ready on port 8080");
+Console.WriteLine("🌐 Health: http://localhost:8080/health");
 
 app.Run();
