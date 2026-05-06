@@ -21,6 +21,8 @@ public class CamasController : ControllerBase
     [HttpPost("")]
     public async Task<IActionResult> Crear([FromBody] CamaDto dto)
     {
+        if (string.IsNullOrWhiteSpace(dto?.Codigo))
+            return BadRequest(new { mensaje = "Código requerido" });
         if (await _db.Camas.AnyAsync(c => c.Codigo == dto.Codigo))
             return BadRequest(new { mensaje = "Ya existe" });
         
@@ -35,6 +37,17 @@ public class CamasController : ControllerBase
         await _db.SaveChangesAsync();
         return CreatedAtAction(nameof(Listar), new { codigo = cama.Codigo }, new { mensaje = "Creada", cama.Codigo });
     }
+
+    [HttpPut("{codigo}/estado")]
+    public async Task<IActionResult> CambiarEstado(string codigo, [FromBody] CambiarEstadoDto req)
+    {
+        var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == codigo);
+        if (cama == null) return NotFound(new { mensaje = "No encontrada" });
+        cama.EstadoOperativo = req.EstadoOperativo;
+        await _db.SaveChangesAsync();
+        return Ok(new { mensaje = "Actualizado" });
+    }
 }
 
 public class CamaDto { public string? Codigo { get; set; } public string? Unidad { get; set; } public string? Tipo { get; set; } }
+public class CambiarEstadoDto { public string EstadoOperativo { get; set; } = ""; }
