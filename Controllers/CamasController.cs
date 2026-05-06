@@ -13,11 +13,11 @@ public class CamasController : ControllerBase
 
     [HttpGet("")]
     public async Task<IActionResult> Listar() => 
-        Ok(await _db.Camas.Select(c => new { c.Codigo, c.Unidad, c.Tipo, c.EstadoOperativo }).ToListAsync());
+        Ok(await _db.Camas.Select(c => new { c.Codigo, c.Unidad, c.Tipo, EstadoOperativo = c.Estado }).ToListAsync());
 
     [HttpGet("disponibles")]
     public async Task<IActionResult> Disponibles() => 
-        Ok(await _db.Camas.Where(c => c.EstadoOperativo == "Disponible").Select(c => new { c.Codigo, c.Unidad }).ToListAsync());
+        Ok(await _db.Camas.Where(c => c.Estado == "Disponible").Select(c => new { c.Codigo, c.Unidad }).ToListAsync());
 
     [HttpPost("")]
     public async Task<IActionResult> Crear([FromBody] CamaDto dto)
@@ -31,8 +31,7 @@ public class CamasController : ControllerBase
             Codigo = dto.Codigo, 
             Unidad = dto.Unidad ?? "General", 
             Tipo = dto.Tipo ?? "Estándar",
-            EstadoOperativo = "Disponible",
-            Estado = "Activo"
+            Estado = "Disponible"
         };
         _db.Camas.Add(cama);
         await _db.SaveChangesAsync();
@@ -44,7 +43,7 @@ public class CamasController : ControllerBase
     {
         var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == codigo);
         if (cama == null) return NotFound(new { mensaje = "No encontrada" });
-        cama.EstadoOperativo = req.EstadoOperativo;
+        cama.Estado = req.EstadoOperativo;
         await _db.SaveChangesAsync();
         return Ok(new { mensaje = "Actualizado" });
     }

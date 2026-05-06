@@ -41,7 +41,6 @@ public class HospitalizacionDbContext : DbContext
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<Paciente>().HasQueryFilter(p => p.Estado == "Activo");
-        modelBuilder.Entity<Cama>().HasQueryFilter(c => c.Estado == "Activo");
         modelBuilder.Entity<Admision>().HasQueryFilter(a => a.Estado == "Activo");
         modelBuilder.Entity<Tratamiento>().HasQueryFilter(t => t.Estado == "Activo");
     }
