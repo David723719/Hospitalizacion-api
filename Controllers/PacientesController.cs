@@ -20,10 +20,12 @@ public class PacientesController : ControllerBase
         if (string.IsNullOrWhiteSpace(dto?.Codigo)) return BadRequest(new { mensaje = "Código requerido" });
         if (await _db.Database.SqlQueryRaw<string>(@"SELECT ""Codigo"" FROM ""Pacientes"" WHERE ""Codigo"" = @p0", dto.Codigo).FirstOrDefaultAsync() != null)
             return BadRequest(new { mensaje = "Ya existe" });
-        
+
+        var id = Guid.NewGuid();
+        var fechaNac = dto.FechaNacimiento ?? DateTime.UtcNow;
         await _db.Database.ExecuteSqlRawAsync(
-            @"INSERT INTO ""Pacientes"" (""Codigo"", ""Nombre"", ""FechaNacimiento"", ""Estado"") VALUES (@p0, @p1, @p2, @p3)",
-            dto.Codigo, dto.Nombre ?? "Sin nombre", dto.FechaNacimiento, "Activo");
+            @"INSERT INTO ""Pacientes"" (""Id"", ""Codigo"", ""Nombre"", ""FechaNacimiento"", ""Estado"") VALUES (@p0, @p1, @p2, @p3, @p4)",
+            id, dto.Codigo, dto.Nombre ?? "Sin nombre", fechaNac, "Activo");
         
         return Created("", new { mensaje = "Creado", codigo = dto.Codigo });
     }
@@ -36,5 +38,5 @@ public class PacientesController : ControllerBase
     }
 }
 
-public class CreatePacienteDto { public string Codigo { get; set; } = ""; public string? Nombre { get; set; } public DateTime FechaNacimiento { get; set; } }
+public class CreatePacienteDto { public string Codigo { get; set; } = ""; public string? Nombre { get; set; } public DateTime? FechaNacimiento { get; set; } }
 public class PacienteResult { public string Codigo { get; set; } = ""; public string Nombre { get; set; } = ""; public DateTime FechaNacimiento { get; set; } public string Estado { get; set; } = ""; }

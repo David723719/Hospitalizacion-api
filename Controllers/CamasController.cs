@@ -30,7 +30,7 @@ public class CamasController : ControllerBase
         try 
         {
             var camas = await _db.Database.SqlQueryRaw<CamaResult>(
-                @"SELECT ""Codigo"", ""Unidad"", ""Tipo"" FROM ""Camas"" WHERE ""Estado"" = 'Activo'").ToListAsync();
+                @"SELECT ""Codigo"", ""Unidad"", ""Tipo"" FROM ""Camas"" WHERE ""Estado"" IN ('Activo', 'Disponible')").ToListAsync();
             return Ok(camas);
         }
         catch (System.Exception ex) { return StatusCode(500, new { error = ex.Message }); }
@@ -45,10 +45,11 @@ public class CamasController : ControllerBase
             var existe = await _db.Database.SqlQueryRaw<string>(
                 @"SELECT ""Codigo"" FROM ""Camas"" WHERE ""Codigo"" = @p0", dto.Codigo).FirstOrDefaultAsync();
             if (existe != null) return BadRequest(new { mensaje = "Ya existe" });
-            
+
+            var id = Guid.NewGuid();
             await _db.Database.ExecuteSqlRawAsync(
-                @"INSERT INTO ""Camas"" (""Codigo"", ""Unidad"", ""Tipo"", ""Estado"") VALUES (@p0, @p1, @p2, @p3)",
-                dto.Codigo, dto.Unidad ?? "General", dto.Tipo ?? "Estándar", "Activo");
+                @"INSERT INTO ""Camas"" (""Id"", ""Codigo"", ""Unidad"", ""Tipo"", ""Estado"") VALUES (@p0, @p1, @p2, @p3, @p4)",
+                id, dto.Codigo, dto.Unidad ?? "General", dto.Tipo ?? "Estándar", "Activo");
             
             return Created("", new { mensaje = "Creada", codigo = dto.Codigo });
         }

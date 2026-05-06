@@ -24,7 +24,8 @@ public class AdmisionesController : ControllerBase
         if (await _db.Admisiones.AnyAsync(x => x.Codigo == dto.Codigo))
             return BadRequest(new { mensaje = "Ya existe" });
 
-        var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == dto.CamaCodigo && c.Estado == "Disponible");
+        var cama = await _db.Camas.FirstOrDefaultAsync(c =>
+            c.Codigo == dto.CamaCodigo && (c.Estado == "Activo" || c.Estado == "Disponible"));
         if (cama == null) return BadRequest(new { mensaje = "Cama no disponible" });
 
         var paciente = await _db.Pacientes.AnyAsync(p => p.Codigo == dto.PacienteCodigo);
@@ -62,7 +63,7 @@ public class AdmisionesController : ControllerBase
         admision.FechaEgreso = DateTime.UtcNow;
         
         var cama = await _db.Camas.FirstOrDefaultAsync(c => c.Codigo == admision.CamaCodigo);
-        if (cama != null) cama.Estado = "Disponible";
+        if (cama != null) cama.Estado = "Activo";
         
         await _db.SaveChangesAsync();
         return NoContent();

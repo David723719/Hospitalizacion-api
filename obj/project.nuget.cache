@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "4Hb1YR6MCNQ=",
+  "dgSpecHash": "gCjZGZshYI4=",
   "success": true,
-  "projectFilePath": "C:\\Users\\USUARIO\\Documents\\proyectos universidad\\HospitalizacionAPI\\HospitalizacionAPI.csproj",
+  "projectFilePath": "c:\\Users\\USUARIO\\Documents\\proyectos universidad\\HospitalizacionAPI\\HospitalizacionAPI.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\USUARIO\\.nuget\\packages\\humanizer.core\\2.14.1\\humanizer.core.2.14.1.nupkg.sha512",
     "C:\\Users\\USUARIO\\.nuget\\packages\\microsoft.aspnetcore.openapi\\8.0.22\\microsoft.aspnetcore.openapi.8.0.22.nupkg.sha512",
