@@ -8,20 +8,20 @@ var builder = WebApplication.CreateBuilder(args);
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// ✅ CORS - Permite tu frontend de Vercel
+// CORS PERMISIVO - Permite TODO
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
         policy
-            .WithOrigins("https://hospital-frontend-beryl.vercel.app", "http://localhost:5173")
+            .WithOrigins("*")  // ← Permite CUALQUIER origen
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
     });
 });
 
-// Base de datos
+// DB
 var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL") 
     ?? "postgresql://postgres:mBnVjAqqXptogpKsefIaIFEWaObrAuPq@trolley.proxy.rlwy.net:54033/railway";
 
@@ -40,12 +40,12 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
-// 🔥 ORDEN CRÍTICO - CORS antes que nada
+// ORDEN OBLIGATORIO
 app.UseCors("AllowAll");
 app.UseAuthorization();
 app.MapControllers();
 
 app.MapGet("/health", () => Results.Ok(new { ok = true }));
 
-Console.WriteLine($"🚀 Backend ready on port {port}");
+Console.WriteLine($"🚀 Backend ready");
 app.Run();
