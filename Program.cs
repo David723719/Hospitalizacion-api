@@ -6,18 +6,30 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// 1. Puerto para Railway
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// CORS
+// 2. 🔥 CONFIGURACIÓN CORS COMPLETA
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", p => p
-        .WithOrigins("https://hospital-frontend-beryl.vercel.app", "http://localhost:5173")
-        .AllowAnyHeader().AllowAnyMethod().AllowCredentials());
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy
+            // Permite los dominios de Vercel (producción y preview) y localhost
+            .WithOrigins(
+                "https://hospital-frontend-beryl.vercel.app",
+                "https://hospital-frontend-44lke7rkt-david723719s-projects.vercel.app",
+                "http://localhost:5173",
+                "https://hospitalizacion-api-production.up.railway.app"
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod()  // GET, POST, PUT, DELETE, OPTIONS
+            .AllowCredentials();
+    });
 });
 
-// Base de datos
+// 3. Base de datos - Parseo de DATABASE_URL de Railway
 var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 if (!string.IsNullOrEmpty(dbUrl))
 {
@@ -25,13 +37,16 @@ if (!string.IsNullOrEmpty(dbUrl))
     var up = uri.UserInfo.Split(':');
     var cs = new NpgsqlConnectionStringBuilder
     {
-        Host = uri.Host, Port = uri.Port,
-        Username = up[0], Password = up[1],
+        Host = uri.Host,
+        Port = uri.Port,
+        Username = up[0],
+        Password = up[1],
         Database = uri.AbsolutePath.Trim('/'),
-        SslMode = SslMode.Require, Timeout = 30
+        SslMode = SslMode.Require,
+        Timeout = 30
     };
     builder.Services.AddDbContext<HospitalizacionDbContext>(o => o.UseNpgsql(cs.ConnectionString));
-    Console.WriteLine($"✅ DB Config: {cs.Host}:{cs.Port}/{cs.Database}");
+    Console.WriteLine($"✅ DB: {cs.Host}:{cs.Port}/{cs.Database}");
 }
 else
 {
@@ -42,66 +57,25 @@ else
 builder.Services.AddControllers();
 var app = builder.Build();
 
-// 🔥 DEBUG: Endpoint para ver estado real de la DB
+// 🔥 DEBUG: Endpoint para verificar DB (puedes acceder a /api/debug)
 app.MapGet("/api/debug", async (HospitalizacionDbContext db) =>
 {
     try
     {
-        // Verificar conexión
         await db.Database.CanConnectAsync();
-        
-        // Listar tablas existentes
-        var tables = await db.Database.SqlQueryRaw<string>(
-            @"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
-        ).ToListAsync();
-        
-        // Verificar columnas de Camas
-        var columns = await db.Database.SqlQueryRaw<string>(
-            @"SELECT column_name FROM information_schema.columns WHERE table_name = 'Camas'"
-        ).ToListAsync();
-        
-        return Results.Ok(new { 
-            connected = true, 
-            tables, 
-            camasColumns = columns,
-            message = "DB OK - Revisa camasColumns para ver si falta EstadoOperativo"
-        });
+        return Results.Ok(new { connected = true, message = "Backend y DB conectados" });
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"❌ DEBUG ERROR: {ex.Message}");
-        Console.WriteLine($"❌ Stack: {ex.StackTrace}");
-        return Results.Ok(new { connected = false, error = ex.Message, stack = ex.StackTrace });
+        return Results.Ok(new { connected = false, error = ex.Message });
     }
 });
 
-// 🔥 LOGGING FORZADO: Middleware que registra TODO
-app.Use(async (context, next) =>
-{
-    Console.WriteLine($"📥 {context.Request.Method} {context.Request.Path}");
-    try
-    {
-        await next();
-        Console.WriteLine($"📤 {context.Response.StatusCode}");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"❌❌❌ UNHANDLED EXCEPTION ❌❌❌");
-        Console.WriteLine($"Path: {context.Request.Path}");
-        Console.WriteLine($"Message: {ex.Message}");
-        Console.WriteLine($"Stack: {ex.StackTrace}");
-        if (ex.InnerException != null)
-        {
-            Console.WriteLine($"Inner: {ex.InnerException.Message}");
-            Console.WriteLine($"Inner Stack: {ex.InnerException.StackTrace}");
-        }
-        throw;
-    }
-});
-
-app.UseCors("AllowAll");
-app.UseAuthorization();
-app.MapControllers();
+// 4. ORDEN CRÍTICO DE MIDDLEWARES
+// CORS debe ir ANTES de Authorization y MapControllers
+app.UseCors("AllowAll");       
+app.UseAuthorization();        
+app.MapControllers();          
 
 Console.WriteLine($"🚀 Backend ready on port {port}");
 app.Run();
