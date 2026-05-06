@@ -5,22 +5,18 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Puerto
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5200";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// 🔥 CORS - PERMISIVO Y FUNCIONAL
+// ✅ CORS - Permite tu frontend de Vercel
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
         policy
-            .WithOrigins(
-                "https://hospital-frontend-beryl.vercel.app",
-                "http://localhost:5173"
-            )
+            .WithOrigins("https://hospital-frontend-beryl.vercel.app", "http://localhost:5173")
             .AllowAnyHeader()
-            .AllowAnyMethod()  // GET, POST, PUT, DELETE, OPTIONS
+            .AllowAnyMethod()
             .AllowCredentials();
     });
 });
@@ -44,12 +40,11 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
-// 🔥 ORDEN CRÍTICO: CORS ANTES de Authorization y MapControllers
-app.UseCors("AllowAll");        // ← Nombre debe coincidir con AddCors
+// 🔥 ORDEN CRÍTICO - CORS antes que nada
+app.UseCors("AllowAll");
 app.UseAuthorization();
 app.MapControllers();
 
-// Health check
 app.MapGet("/health", () => Results.Ok(new { ok = true }));
 
 Console.WriteLine($"🚀 Backend ready on port {port}");
