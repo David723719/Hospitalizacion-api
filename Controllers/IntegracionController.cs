@@ -30,8 +30,8 @@ public class IntegracionController : ControllerBase
     }
 
     // Endpoints de prueba para tus consumos externos
-    [HttpGet("farmacia/medicamentos")] public async Task<IActionResult> FarmaciaMed() => Ok(new { ok = true, data = await _api.GetMedicamentos() });
+    [HttpGet("farmacia/medicamentos")] public async Task<IActionResult> FarmaciaMed() => Ok(new { ok = true, data = await _api.GetMedicamentosCatalogo() });
     [HttpGet("emergencias/triaje")] public async Task<IActionResult> EmergTriaje() => Ok(new { ok = true, data = await _api.GetTriaje() });
-    [HttpGet("rrhh/medicos")] public async Task<IActionResult> RRHHMed([FromQuery] string? esp) => Ok(new { ok = true, data = await _api.GetMedicos(esp) });
+    [HttpGet("rrhh/medicos")] public async Task<IActionResult> RRHHMed([FromQuery] string? esp) => Ok(new { ok = true, data = await _api.GetMedicos(esp ?? string.Empty) });
     [HttpGet("facturacion/seguro/{cod}")] public async Task<IActionResult> FactSeg(string cod) => Ok(new { ok = true, data = await _api.ValidarSeguro(cod) });
 }

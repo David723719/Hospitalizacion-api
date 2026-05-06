@@ -1,0 +1,11 @@
+bin/
+obj/
+.git/
+.gitignore
+.vs/
+.vscode/
+publish/
+*.user
+*.suo
+*.db
+*.log
