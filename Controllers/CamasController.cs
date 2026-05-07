@@ -6,8 +6,7 @@ using System.Threading.Tasks;
 
 namespace HospitalizacionAPI.Controllers;
 
-[Route("api/camas")]
-[ApiController]
+[Route("api/camas"), ApiController]
 public class CamasController : ControllerBase
 {
     private readonly HospitalizacionDbContext _db;
@@ -18,7 +17,7 @@ public class CamasController : ControllerBase
     {
         try
         {
-            // ✅ SQL EXACTO a tu tabla real. EF no genera nada.
+            // ✅ SQL EXACTO a tu tabla real - SIN EstadoOperativo
             var camas = await _db.Database.SqlQueryRaw<CamaDto>(
                 @"SELECT ""Codigo"", ""Unidad"", ""Tipo"", ""Estado"" FROM ""Camas"""
             ).ToListAsync();
@@ -54,14 +53,12 @@ public class CamasController : ControllerBase
             if (string.IsNullOrWhiteSpace(request.Codigo))
                 return BadRequest(new { mensaje = "Código obligatorio" });
 
-            // Verificar existencia con SQL directo
             var existe = await _db.Database.SqlQueryRaw<string>(
                 @"SELECT ""Codigo"" FROM ""Camas"" WHERE ""Codigo"" = @p0", request.Codigo
             ).FirstOrDefaultAsync();
 
             if (existe != null) return BadRequest(new { mensaje = "Ya existe" });
 
-            // INSERT EXACTO a columnas reales
             await _db.Database.ExecuteSqlRawAsync(
                 @"INSERT INTO ""Camas"" (""Codigo"", ""Unidad"", ""Tipo"", ""Estado"") 
                   VALUES (@p0, @p1, @p2, @p3)",
@@ -97,7 +94,6 @@ public class CamasController : ControllerBase
     }
 }
 
-// DTOs simples que coinciden con tu tabla
 public class CreateCamaRequest { public string Codigo { get; set; } = ""; public string? Unidad { get; set; } public string? Tipo { get; set; } }
 public class UpdateEstadoRequest { public string Estado { get; set; } = "Activo"; }
 public class CamaDto { public string Codigo { get; set; } = ""; public string Unidad { get; set; } = ""; public string Tipo { get; set; } = ""; public string Estado { get; set; } = ""; }
